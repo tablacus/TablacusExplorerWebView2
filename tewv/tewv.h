@@ -5,7 +5,35 @@
 #include <shlobj.h>
 #include <process.h>
 #include <vector>
+#include <unordered_map>
+#include <mshtmdid.h>
+//#include <wrl.h>
+#include <mshtmhst.h>
+#include <wil/com.h>
+#include "WebView2.h"
+
 #pragma comment (lib, "shlwapi.lib")
+//using namespace Microsoft::WRL;
+
+#define TE_VT 24
+#define TE_VI 0xffffff
+#define TE_METHOD		0x60010000
+#define TE_METHOD_MAX	0x6001ffff
+#define TE_METHOD_MASK	0x0000ffff
+#define TE_PROPERTY		0x40010000
+#define START_OnFunc	0x4001fc00
+#define TE_OFFSET		0x4001ff00
+#define DISPID_TE_ITEM  0x6001ffff
+#define DISPID_TE_COUNT 0x4001ffff
+#define DISPID_TE_INDEX 0x4001fffe
+#define DISPID_TE_MAX TE_VI
+
+//Tablacus Explorer (Edge)
+const CLSID CLSID_WebBrowserExt             = {0x55bbf1b8, 0x0d30, 0x4908, { 0xbe, 0x0c, 0xd5, 0x76, 0x61, 0x2a, 0x0f, 0x48}};
+// {BD34E79B-963F-4AFB-B03E-C5BD289B5080}
+const IID SID_TablacusObject                = {0xbd34e79b, 0x963f, 0x4afb, { 0xb0, 0x3e, 0xc5, 0xbd, 0x28, 0x9b, 0x50, 0x80}};
+// {A7A52B88-B449-47BB-BD92-ABCCD8A6FED7}
+const IID SID_TablacusArray                 = {0xa7a52b88, 0xb449, 0x47bb, { 0xbd, 0x92, 0xab, 0xcc, 0xd8, 0xa6, 0xfe, 0xd7 }};
 
 struct TEmethod
 {
@@ -23,7 +51,9 @@ struct TEmethod
 
 
 // Base Object
-class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject
+class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject, public IServiceProvider,
+	public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
+	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 {
 public:
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
@@ -131,11 +161,24 @@ public:
 	STDMETHODIMP UIDeactivate(void);
 	STDMETHODIMP SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect);
 	STDMETHODIMP ReactivateAndUndo(void);
+	//IServiceProvider
+	STDMETHODIMP QueryService(REFGUID guidService, REFIID riid, void **ppv);
+	//ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
+	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Environment *created_environment);
+	//ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
+	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Controller *createdController);
 
 	CteBase();
 	~CteBase();
 private:
 	LONG		m_cRef;
+
+	IOleClientSite *m_pOleClientSite;
+	HWND m_hwndParent;
+	wil::com_ptr<ICoreWebView2Controller> m_webviewController;
+	wil::com_ptr<ICoreWebView2> m_webviewWindow;
+	BSTR m_bstrPath;
+
 	IWebBrowser2 *m_pWebBrowser;
 	IOleObject *m_pOleObject;
 	IOleInPlaceObject *m_pOleInPlaceObject;
@@ -152,4 +195,92 @@ public:
 
 	STDMETHODIMP CreateInstance(IUnknown *pUnkOuter, REFIID riid, void **ppvObject);
 	STDMETHODIMP LockServer(BOOL fLock);
+};
+
+class CteArray : public IDispatchEx
+{
+public:
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
+	STDMETHODIMP_(ULONG) AddRef();
+	STDMETHODIMP_(ULONG) Release();
+	//IDispatch
+	STDMETHODIMP GetTypeInfoCount(UINT *pctinfo);
+	STDMETHODIMP GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo);
+	STDMETHODIMP GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId);
+	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr);
+	//IDispatchEx
+	STDMETHODIMP GetDispID(BSTR bstrName, DWORD grfdex, DISPID *pid);
+	STDMETHODIMP InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS *pdp, VARIANT *pvarRes, EXCEPINFO *pei, IServiceProvider *pspCaller);
+	STDMETHODIMP DeleteMemberByName(BSTR bstrName, DWORD grfdex);
+	STDMETHODIMP DeleteMemberByDispID(DISPID id);
+	STDMETHODIMP GetMemberProperties(DISPID id, DWORD grfdexFetch, DWORD *pgrfdex);
+	STDMETHODIMP GetMemberName(DISPID id, BSTR *pbstrName);
+	STDMETHODIMP GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid);
+	STDMETHODIMP GetNameSpaceParent(IUnknown **ppunk);
+
+	CteArray();
+	~CteArray();
+
+	VOID ItemEx(int nIndex, VARIANT *pVarResult, VARIANT *pVarNew);
+private:
+	std::vector<VARIANT>	m_pArray;
+	LONG	m_cRef;
+};
+
+class CteObjectEx : public IDispatchEx
+{
+public:
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
+	STDMETHODIMP_(ULONG) AddRef();
+	STDMETHODIMP_(ULONG) Release();
+	//IDispatch
+	STDMETHODIMP GetTypeInfoCount(UINT *pctinfo);
+	STDMETHODIMP GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo);
+	STDMETHODIMP GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId);
+	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr);
+	//IDispatchEx
+	STDMETHODIMP GetDispID(BSTR bstrName, DWORD grfdex, DISPID *pid);
+	STDMETHODIMP InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS *pdp, VARIANT *pvarRes, EXCEPINFO *pei, IServiceProvider *pspCaller);
+	STDMETHODIMP DeleteMemberByName(BSTR bstrName, DWORD grfdex);
+	STDMETHODIMP DeleteMemberByDispID(DISPID id);
+	STDMETHODIMP GetMemberProperties(DISPID id, DWORD grfdexFetch, DWORD *pgrfdex);
+	STDMETHODIMP GetMemberName(DISPID id, BSTR *pbstrName);
+	STDMETHODIMP GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid);
+	STDMETHODIMP GetNameSpaceParent(IUnknown **ppunk);
+
+	CteObjectEx();
+	~CteObjectEx();
+private:
+	std::unordered_map<std::wstring, VARIANT>	m_umObject;
+	LONG	m_cRef;
+};
+
+class CteDispatch : public IDispatch, public IEnumVARIANT
+{
+public:
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
+	STDMETHODIMP_(ULONG) AddRef();
+	STDMETHODIMP_(ULONG) Release();
+	//IDispatch
+	STDMETHODIMP GetTypeInfoCount(UINT *pctinfo);
+	STDMETHODIMP GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo);
+	STDMETHODIMP GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId);
+	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr);
+	//IEnumVARIANT
+	STDMETHODIMP Next(ULONG celt, VARIANT *rgVar, ULONG *pCeltFetched);
+	STDMETHODIMP Skip(ULONG celt);
+	STDMETHODIMP Reset(void);
+	STDMETHODIMP Clone(IEnumVARIANT **ppEnum);
+
+	CteDispatch(IDispatch *pDispatch, int nMode, DISPID dispId);
+	~CteDispatch();
+
+	VOID Clear();
+public:
+	DISPID		m_dispIdMember;
+	int			m_nIndex;
+private:
+	IDispatch	*m_pDispatch;
+
+	LONG		m_cRef;
 };

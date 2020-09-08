@@ -34,6 +34,7 @@
     <None Include="tewv64.def">
       <Filter>Header Files</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="tewv.rc">
