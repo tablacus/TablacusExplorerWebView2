@@ -14,7 +14,6 @@ CteBase		*g_pBase = NULL;
 LONG		g_lLocks = 0;
 
 std::unordered_map<std::wstring, DISPID> g_umArray = {
-	{ L"_NewEnum", DISPID_NEWENUM  },
 	{ L"Item", DISPID_TE_ITEM },
 	{ L"Count", DISPID_TE_COUNT },
 	{ L"length", DISPID_TE_COUNT },
@@ -47,48 +46,6 @@ VOID LockModule()
 VOID UnlockModule()
 {
 	::InterlockedDecrement(&g_lLocks);
-}
-
-/*
-int teBSearch(TEmethod *method, int nSize, int* pMap, LPOLESTR bs)
-{
-	int nMin = 0;
-	int nMax = nSize - 1;
-	int nIndex, nCC;
-
-	while (nMin <= nMax) {
-		nIndex = (nMin + nMax) / 2;
-		nCC = lstrcmpi(bs, method[pMap[nIndex]].name);
-		if (nCC < 0) {
-			nMax = nIndex - 1;
-			continue;
-		}
-		if (nCC > 0) {
-			nMin = nIndex + 1;
-			continue;
-		}
-		return pMap[nIndex];
-	}
-	return -1;
-}
-*/
-HRESULT teGetDispId(TEmethod *method, int nCount, int* pMap, LPOLESTR bs, DISPID *rgDispId)
-{
-/*	if (pMap) {
-		int nIndex = teBSearch(method, nCount, pMap, bs);
-		if (nIndex >= 0) {
-			*rgDispId = method[nIndex].id;
-			return S_OK;
-		}
-	} else {*/
-		for (int i = 0; method[i].name; i++) {
-			if (lstrcmpi(bs, method[i].name) == 0) {
-				*rgDispId = method[i].id;
-				return S_OK;
-			}
-		}
-//	}
-	return DISP_E_UNKNOWNNAME;
 }
 
 BSTR GetLPWSTRFromVariant(VARIANT *pv)
@@ -306,6 +263,23 @@ VOID teSetBSTR(VARIANT *pv, BSTR bs, int nLen)
 	}
 }
 
+
+HRESULT teGetDispIdNum(LPOLESTR lpszName, int nMax, DISPID *pid)
+{
+	VARIANT v, vo;
+	teSetSZ(&v, lpszName);
+	VariantInit(&vo);
+	if (SUCCEEDED(VariantChangeType(&vo, &v, 0, VT_I4))) {
+		*pid = vo.lVal + DISPID_COLLECTION_MIN;
+		VariantClear(&vo);
+	}
+	VariantClear(&v);
+	if (*pid < DISPID_COLLECTION_MIN || *pid >= nMax + DISPID_COLLECTION_MIN) {
+		*pid = DISPID_UNKNOWN;
+	}
+	return S_OK;
+}
+
 BOOL FindUnknown(VARIANT *pv, IUnknown **ppunk)
 {
 	if (pv) {
@@ -322,7 +296,7 @@ BOOL FindUnknown(VARIANT *pv, IUnknown **ppunk)
 		}
 	}
 	*ppunk = NULL;
-	return false;
+	return FALSE;
 }
 
 BSTR GetMemoryFromVariant(VARIANT *pv, BOOL *pbDelete, LONG_PTR *pLen)
@@ -625,7 +599,6 @@ STDMETHODIMP CteBase::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cName
 	OutputDebugString(rgszNames[0]);
 	OutputDebugStringA("\n");
 	return m_pDispatch->GetIDsOfNames(riid, rgszNames, cNames, lcid, rgDispId);
-//	return teGetDispId(methodBASE, _countof(methodBASE), NULL, *rgszNames, rgDispId);
 }
 
 STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
@@ -1248,7 +1221,7 @@ STDMETHODIMP CteArray::QueryInterface(REFIID riid, void **ppvObject)
 	{
 		QITABENT(CteArray, IDispatch),
 		QITABENT(CteArray, IDispatchEx),
-	{ 0 },
+		{ 0 },
 	};
 	return QISearch(this, qit, riid, ppvObject);
 }
@@ -1286,7 +1259,7 @@ STDMETHODIMP CteArray::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNam
 		*rgDispId = itr->second;
 		return S_OK;
 	}
-	return DISP_E_UNKNOWNNAME;
+	return teGetDispIdNum(*rgszNames, m_pArray.size(), rgDispId);
 }
 
 STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
@@ -1310,6 +1283,11 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			return S_OK;
 
 		case DISPID_TE_COUNT://Count
+			if (nArg >= 0 && wFlags == DISPATCH_PROPERTYPUT) {
+				VARIANT v;
+				VariantInit(&v);
+				m_pArray.resize(GetIntFromVariant(&pDispParams->rgvarg[nArg]), v);
+			}
 			teSetLong(pVarResult, m_pArray.size());
 			return S_OK;
 
@@ -1391,9 +1369,6 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			if (nArg >= 0) {
 				UINT nStart = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
 				size_t nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : MAXINT;
-				if (nArg >= 2) {
-					Sleep(0);
-				}
 				if (nStart + nLen > m_pArray.size()) {
 					nLen = m_pArray.size() - nStart;
 				}
@@ -1412,13 +1387,9 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			}
 			return S_OK;
 
-		case DISPID_NEWENUM://_NewEnum
-			teSetObjectRelease(pVarResult, new CteDispatch(this, 0, DISPID_UNKNOWN));
-			return S_OK;
-			//Value
-
-		case DISPID_VALUE:
+		case DISPID_VALUE://Value
 			teSetObject(pVarResult, this);
+		case DISPID_UNKNOWN:
 			return S_OK;
 
 		default:
@@ -1449,7 +1420,6 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 STDMETHODIMP CteArray::GetDispID(BSTR bstrName, DWORD grfdex, DISPID *pid)
 {
 	return GetIDsOfNames(IID_NULL, &bstrName, 1, LOCALE_USER_DEFAULT, pid);
-	//	return teGetDispId(methodArray, 0, NULL, bstrName, pid, TRUE);
 }
 
 STDMETHODIMP CteArray::InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS *pdp, VARIANT *pvarRes, EXCEPINFO *pei, IServiceProvider *pspCaller)
@@ -1460,7 +1430,7 @@ STDMETHODIMP CteArray::InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS *p
 STDMETHODIMP CteArray::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 {
 	DISPID id;
-	HRESULT hr = GetIDsOfNames(IID_NULL, &bstrName, 1, LOCALE_USER_DEFAULT, &id);
+	HRESULT hr = teGetDispIdNum(bstrName, m_pArray.size(), &id);
 	if SUCCEEDED(hr) {
 		return DeleteMemberByDispID(id);
 	}
@@ -1470,7 +1440,7 @@ STDMETHODIMP CteArray::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 STDMETHODIMP CteArray::DeleteMemberByDispID(DISPID id)
 {
 	id -= DISPID_COLLECTION_MIN;
-	if (id >= 0 && (size_t)id < m_pArray.size()) {
+	if (id >= 0 && id < (DISPID)m_pArray.size()) {
 		VariantClear(&m_pArray[id]);
 		return S_OK;
 	}
@@ -1484,6 +1454,12 @@ STDMETHODIMP CteArray::GetMemberProperties(DISPID id, DWORD grfdexFetch, DWORD *
 
 STDMETHODIMP CteArray::GetMemberName(DISPID id, BSTR *pbstrName)
 {
+	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + (DISPID)m_pArray.size()) {
+		wchar_t pszName[8];
+		swprintf_s(pszName, 8, L"%d", id - DISPID_COLLECTION_MIN);
+		*pbstrName = ::SysAllocString(pszName);
+		return S_OK;
+	}
 	for (auto itr = g_umArray.begin(); itr != g_umArray.end(); ++itr) {
 		if (id == itr->second) {
 			*pbstrName = ::SysAllocString(itr->first.data());
@@ -1495,7 +1471,7 @@ STDMETHODIMP CteArray::GetMemberName(DISPID id, BSTR *pbstrName)
 STDMETHODIMP CteArray::GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid)
 {
 	*pid = (id < DISPID_COLLECTION_MIN) ? DISPID_COLLECTION_MIN : id + 1;
-	return (size_t)*pid < m_pArray.size() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
+	return *pid < (DISPID)m_pArray.size() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
 }
 
 STDMETHODIMP CteArray::GetNameSpaceParent(IUnknown **ppunk)
@@ -1507,7 +1483,7 @@ VOID CteArray::ItemEx(int nIndex, VARIANT *pVarResult, VARIANT *pVarNew)
 {
 	if (pVarNew) {
 		if (nIndex >= 0) {
-			if ((size_t)nIndex < m_pArray.size()) {
+			if (nIndex < (int)m_pArray.size()) {
 				if (m_pArray[nIndex].vt != VT_EMPTY) {
 					VariantClear(&m_pArray[nIndex]);
 				}
@@ -1524,7 +1500,7 @@ VOID CteArray::ItemEx(int nIndex, VARIANT *pVarResult, VARIANT *pVarNew)
 		}
 	}
 	if (pVarResult) {
-		if (nIndex >= 0 && (size_t)nIndex < m_pArray.size()) {
+		if (nIndex >= 0 && nIndex < (int)m_pArray.size()) {
 			VariantCopy(pVarResult, &m_pArray[nIndex]);
 		}
 	}
@@ -1549,7 +1525,7 @@ STDMETHODIMP CteObjectEx::QueryInterface(REFIID riid, void **ppvObject)
 	{
 		QITABENT(CteObjectEx, IDispatch),
 		QITABENT(CteObjectEx, IDispatchEx),
-	{ 0 },
+		{ 0 },
 	};
 	return QISearch(this, qit, riid, ppvObject);
 }
@@ -1602,7 +1578,7 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 		teSetObject(pVarResult, this);
 		return S_OK;
 	}
-	if (dispIdMember >= DISPID_COLLECTION_MIN && (size_t)dispIdMember - DISPID_COLLECTION_MIN < m_umObject.size()) {
+	if (dispIdMember >= DISPID_COLLECTION_MIN && dispIdMember < DISPID_COLLECTION_MIN + (DISPID)m_umObject.size()) {
 		auto itr = m_umObject.begin();
 		std::advance(itr, dispIdMember - DISPID_COLLECTION_MIN);
 		int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
@@ -1651,7 +1627,7 @@ STDMETHODIMP CteObjectEx::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 
 STDMETHODIMP CteObjectEx::DeleteMemberByDispID(DISPID id)
 {
-	if (id >= DISPID_COLLECTION_MIN && (size_t)id - DISPID_COLLECTION_MIN < m_umObject.size()) {
+	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + (DISPID)m_umObject.size()) {
 		auto itr = m_umObject.begin();
 		std::advance(itr, id - DISPID_COLLECTION_MIN);
 		VariantClear(&itr->second);
@@ -1667,7 +1643,7 @@ STDMETHODIMP CteObjectEx::GetMemberProperties(DISPID id, DWORD grfdexFetch, DWOR
 
 STDMETHODIMP CteObjectEx::GetMemberName(DISPID id, BSTR *pbstrName)
 {
-	if (id >= DISPID_COLLECTION_MIN && (size_t)id - DISPID_COLLECTION_MIN < m_umObject.size()) {
+	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + (DISPID)m_umObject.size()) {
 		auto itr = m_umObject.begin();
 		std::advance(itr, id - DISPID_COLLECTION_MIN);
 		*pbstrName = ::SysAllocString(itr->first.data());
@@ -1679,7 +1655,7 @@ STDMETHODIMP CteObjectEx::GetMemberName(DISPID id, BSTR *pbstrName)
 STDMETHODIMP CteObjectEx::GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid)
 {
 	*pid = (id < DISPID_COLLECTION_MIN) ? DISPID_COLLECTION_MIN : id + 1;
-	return (size_t)*pid < m_umObject.size() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
+	return *pid < (DISPID)m_umObject.size() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
 }
 
 STDMETHODIMP CteObjectEx::GetNameSpaceParent(IUnknown **ppunk)
@@ -1694,7 +1670,6 @@ CteDispatch::CteDispatch(IDispatch *pDispatch, int nMode, DISPID dispId)
 	m_cRef = 1;
 	pDispatch->QueryInterface(IID_PPV_ARGS(&m_pDispatch));
 	m_dispIdMember = dispId;
-	m_nIndex = 0;
 }
 
 CteDispatch::~CteDispatch()
@@ -1712,8 +1687,7 @@ STDMETHODIMP CteDispatch::QueryInterface(REFIID riid, void **ppvObject)
 	static const QITAB qit[] =
 	{
 		QITABENT(CteDispatch, IDispatch),
-		QITABENT(CteDispatch, IEnumVARIANT),
-	{ 0 },
+		{ 0 },
 	};
 	return QISearch(this, qit, riid, ppvObject);
 }
@@ -1755,57 +1729,11 @@ STDMETHODIMP CteDispatch::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 		if (pVarResult) {
 			VariantInit(pVarResult);
 		}
-		if (wFlags & DISPATCH_PROPERTYGET && dispIdMember == DISPID_VALUE) {
-			teSetObject(pVarResult, this);
-			return S_OK;
+		if (wFlags & DISPATCH_METHOD) {
+			return m_pDispatch->Invoke(m_dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 		}
-		return m_pDispatch->Invoke(m_dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-	} catch (...) {
-	}
-	return DISP_E_MEMBERNOTFOUND;
-}
-
-STDMETHODIMP CteDispatch::Next(ULONG celt, VARIANT *rgVar, ULONG *pCeltFetched)
-{
-	if (!m_pDispatch) {
-		return E_UNEXPECTED;
-	}
-	if (rgVar) {
-		int nCount = 0;
-		VARIANT v;
-		if (Invoke5(m_pDispatch, DISPID_TE_COUNT, DISPATCH_PROPERTYGET, &v, 0, NULL) == S_OK) {
-			nCount = GetIntFromVariantClear(&v);
-		}
-		if (m_nIndex < nCount) {
-			if (pCeltFetched) {
-				*pCeltFetched = 1;
-			}
-			VARIANTARG *pv = GetNewVARIANT(1);
-			teSetLong(&pv[0], m_nIndex++);
-			return Invoke5(m_pDispatch, DISPID_TE_ITEM, DISPATCH_METHOD, rgVar, 1, pv);
-		}
-	}
-	return S_FALSE;
-}
-
-STDMETHODIMP CteDispatch::Skip(ULONG celt)
-{
-	m_nIndex += celt;
-	return S_OK;
-}
-
-STDMETHODIMP CteDispatch::Reset(void)
-{
-	m_nIndex = 0;
-	return S_OK;
-}
-
-STDMETHODIMP CteDispatch::Clone(IEnumVARIANT **ppEnum)
-{
-	if (ppEnum && m_pDispatch) {
-		CteDispatch *pdisp = new CteDispatch(m_pDispatch, 0, m_dispIdMember);
-		*ppEnum = static_cast<IEnumVARIANT *>(pdisp);
+		teSetObject(pVarResult, this);
 		return S_OK;
-	}
-	return E_POINTER;
+	} catch (...) {}
+	return DISP_E_MEMBERNOTFOUND;
 }

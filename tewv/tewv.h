@@ -35,12 +35,6 @@ const IID SID_TablacusObject                = {0xbd34e79b, 0x963f, 0x4afb, { 0xb
 // {A7A52B88-B449-47BB-BD92-ABCCD8A6FED7}
 const IID SID_TablacusArray                 = {0xa7a52b88, 0xb449, 0x47bb, { 0xbd, 0x92, 0xab, 0xcc, 0xd8, 0xa6, 0xfe, 0xd7 }};
 
-struct TEmethod
-{
-	LONG   id;
-	LPWSTR name;
-};
-
 #ifdef _WIN64
 #define teSetPtr(pVar, nData)	teSetLL(pVar, (LONGLONG)nData)
 #define GetPtrFromVariant(pv)	GetLLFromVariant(pv)
@@ -255,7 +249,7 @@ private:
 	LONG	m_cRef;
 };
 
-class CteDispatch : public IDispatch, public IEnumVARIANT
+class CteDispatch : public IDispatch
 {
 public:
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
@@ -266,11 +260,6 @@ public:
 	STDMETHODIMP GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo);
 	STDMETHODIMP GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId);
 	STDMETHODIMP Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr);
-	//IEnumVARIANT
-	STDMETHODIMP Next(ULONG celt, VARIANT *rgVar, ULONG *pCeltFetched);
-	STDMETHODIMP Skip(ULONG celt);
-	STDMETHODIMP Reset(void);
-	STDMETHODIMP Clone(IEnumVARIANT **ppEnum);
 
 	CteDispatch(IDispatch *pDispatch, int nMode, DISPID dispId);
 	~CteDispatch();
@@ -278,7 +267,6 @@ public:
 	VOID Clear();
 public:
 	DISPID		m_dispIdMember;
-	int			m_nIndex;
 private:
 	IDispatch	*m_pDispatch;
 
