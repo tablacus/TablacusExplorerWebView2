@@ -774,12 +774,14 @@ STDMETHODIMP CteBase::ClientToWindow(int *pcx, int *pcy)
 
 STDMETHODIMP CteBase::PutProperty(BSTR Property, VARIANT vtValue)
 {
-	return m_pWebBrowser->PutProperty(Property, vtValue);
+	return m_webviewWindow->AddHostObjectToScript(Property, &vtValue);
 }
 
 STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 {
-	return m_pWebBrowser->GetProperty(Property, pvtValue);
+	HRESULT hr = m_webviewWindow->ExecuteScript(Property, this);
+	teSetLong(pvtValue, hr);
+	return hr;
 }
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
@@ -1157,6 +1159,13 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 	return S_OK;
 }
 
+//ICoreWebView2ExecuteScriptCompletedHandler
+STDMETHODIMP CteBase::Invoke(HRESULT result, LPCWSTR resultObjectAsJson)
+{
+	return S_OK;
+}
+
+
 // CteClassFactory
 
 STDMETHODIMP CteClassFactory::QueryInterface(REFIID riid, void **ppvObject)
@@ -1205,13 +1214,15 @@ STDMETHODIMP CteClassFactory::LockServer(BOOL fLock)
 CteArray::CteArray()
 {
 	m_cRef = 1;
+	SAFEARRAYBOUND sab = { 0, 0 };
+	m_psa = SafeArrayCreate(VT_VARIANT, 1, &sab);
+	m_bDestroy = TRUE;
 }
 
 CteArray::~CteArray()
 {
-	while (!m_pArray.empty()) {
-		VariantClear(&m_pArray.back());
-		m_pArray.pop_back();
+	if (m_bDestroy) {
+		SafeArrayDestroy(m_psa);
 	}
 }
 
@@ -1259,12 +1270,13 @@ STDMETHODIMP CteArray::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNam
 		*rgDispId = itr->second;
 		return S_OK;
 	}
-	return teGetDispIdNum(*rgszNames, m_pArray.size(), rgDispId);
+	return teGetDispIdNum(*rgszNames, TE_PROPERTY - DISPID_COLLECTION_MIN, rgDispId);
 }
 
 STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-	VARIANT v;
+	LONG n, lIndex;
+	SAFEARRAYBOUND sab;
 	try {
 		if (wFlags == DISPATCH_PROPERTYGET && dispIdMember >= TE_METHOD) {
 			teSetObjectRelease(pVarResult, new CteDispatch(this, 0, dispIdMember));
@@ -1286,72 +1298,100 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			if (nArg >= 0 && wFlags == DISPATCH_PROPERTYPUT) {
 				VARIANT v;
 				VariantInit(&v);
-				m_pArray.resize(GetIntFromVariant(&pDispParams->rgvarg[nArg]), v);
+				sab = { (ULONG)GetIntFromVariant(&pDispParams->rgvarg[nArg]), 0 };
+				::SafeArrayRedim(m_psa, &sab);
 			}
-			teSetLong(pVarResult, m_pArray.size());
+			teSetLong(pVarResult, GetCount());
 			return S_OK;
 
 		case TE_METHOD + 1://push
+			n = GetCount();
+			sab = { (ULONG)n + nArg + 1, 0 };
+			::SafeArrayRedim(m_psa, &sab);
 			for (int i = 0; i <= nArg; ++i) {
-				VariantInit(&v);
-				VariantCopy(&v, &pDispParams->rgvarg[nArg - i]);
-				m_pArray.push_back(v);
+				lIndex = n + i;
+				::SafeArrayPutElement(m_psa, &lIndex, &pDispParams->rgvarg[nArg - i]);
 			}
 			return S_OK;
 
 		case TE_METHOD + 2://pop
-			if (!m_pArray.empty()) {
+			n = GetCount();
+			if (--n >= 0) {
 				if (pVarResult) {
-					VariantCopy(pVarResult, &m_pArray.back());
+					::SafeArrayGetElement(m_psa, &n, pVarResult);
 				}
-				m_pArray.pop_back();
+				sab = { (ULONG)n, 0 };
+				::SafeArrayRedim(m_psa, &sab);
 			}
 			return S_OK;
 
 		case TE_METHOD + 3://shift
-			if (!m_pArray.empty()) {
+			n = GetCount();
+			if (n) {
 				if (pVarResult) {
-					VariantCopy(pVarResult, &m_pArray.front());
+					LONG l = 0;
+					::SafeArrayGetElement(m_psa, &l, pVarResult);
 				}
-				m_pArray.erase(m_pArray.begin());
+				VARIANT *pv;
+				if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
+					::CopyMemory(pv, &pv[1], sizeof(VARIANT) * --n);
+					::SafeArrayUnaccessData(m_psa);
+					SAFEARRAYBOUND sab = { (ULONG)n, 0 };
+					::SafeArrayRedim(m_psa, &sab);
+				}
 			}
 			return S_OK;
 
 		case TE_METHOD + 4://unshift
-			for (int i = nArg; i >= 0; --i) {
-				VariantInit(&v);
-				VariantCopy(&v, &pDispParams->rgvarg[nArg - i]);
-				m_pArray.insert(m_pArray.begin(), v);
+			n = GetCount();
+			VARIANT *pv;
+			sab = { (ULONG)n + nArg + 1, 0 };
+			::SafeArrayRedim(m_psa, &sab);
+			if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
+				::CopyMemory(&pv[nArg + 1], pv, sizeof(VARIANT) * n);
+				for (int i = nArg; i >= 0; --i) {
+					::VariantInit(&pv[i]);
+				}
+				::SafeArrayUnaccessData(m_psa);
+				for (LONG i = nArg; i >= 0; --i) {
+					::SafeArrayPutElement(m_psa, &i, &pDispParams->rgvarg[nArg - i]);
+				}
 			}
 			return S_OK;
 
 		case TE_METHOD + 5://join
 			if (pVarResult) {
 				UINT n = 0;
-				VARIANT vSeparator, v;
+				VARIANT vSeparator, v, vs;
 				if (nArg >= 0) {
 					teVariantChangeType(&vSeparator, &pDispParams->rgvarg[nArg], VT_BSTR);
 				} else {
 					teSetSZ(&vSeparator, L",");
 				}
 				UINT nSeparator = ::SysStringByteLen(vSeparator.bstrVal);
-				for (size_t i = 0; i < m_pArray.size(); ++i) {
+				for (LONG i = 0; i < GetCount(); ++i) {
 					if (i) {
 						n += nSeparator;
 					}
-					teVariantChangeType(&v, &m_pArray[i], VT_BSTR);
+					VariantInit(&vs);
+					::SafeArrayGetElement(m_psa, &i, &vs);
+					teVariantChangeType(&v, &vs, VT_BSTR);
+					VariantClear(&vs);
 					n += ::SysStringByteLen(v.bstrVal);
 					VariantClear(&v);
 				}
 				pVarResult->vt = VT_BSTR;
 				pVarResult->bstrVal = ::SysAllocStringByteLen(NULL, n);
 				BYTE *p = (BYTE *)pVarResult->bstrVal;
-				for (size_t i = 0; i < m_pArray.size(); ++i) {
+				for (LONG i = 0; i < GetCount(); ++i) {
 					if (i) {
 						CopyMemory(p, vSeparator.bstrVal, nSeparator);
 						p += nSeparator;
 					}
-					teVariantChangeType(&v, &m_pArray[i], VT_BSTR);
+					VariantInit(&vs);
+					::SafeArrayGetElement(m_psa, &i, &vs);
+					teVariantChangeType(&v, &vs, VT_BSTR);
+					VariantClear(&vs);
 					UINT nSize = ::SysStringByteLen(v.bstrVal);
 					CopyMemory(p, v.bstrVal, nSize);
 					p += nSize;
@@ -1359,7 +1399,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				}
 			}
 			return S_OK;
-
+/*
 		case TE_METHOD + 6://Slice
 		case TE_METHOD + 7://Splice
 			CteArray *pNewArray;
@@ -1383,6 +1423,18 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				}
 				if (dispIdMember == TE_METHOD + 7) {//Splice
 					m_pArray.erase(m_pArray.begin() + nStart, m_pArray.begin() + nStart + nLen);
+				}
+			}
+			return S_OK;
+*/
+		case DISPID_PROPERTYPUT:
+			if (wFlags == DISPATCH_PROPERTYPUT && nArg >= 0) {
+				if (pDispParams->rgvarg[nArg].vt == (VT_ARRAY | VT_VARIANT)) {
+					if (m_bDestroy) {
+						m_bDestroy = FALSE;
+						SafeArrayDestroy(m_psa);
+						m_psa = pDispParams->rgvarg[nArg].parray;
+					}
 				}
 			}
 			return S_OK;
@@ -1430,7 +1482,7 @@ STDMETHODIMP CteArray::InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS *p
 STDMETHODIMP CteArray::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 {
 	DISPID id;
-	HRESULT hr = teGetDispIdNum(bstrName, m_pArray.size(), &id);
+	HRESULT hr = teGetDispIdNum(bstrName, GetCount(), &id);
 	if SUCCEEDED(hr) {
 		return DeleteMemberByDispID(id);
 	}
@@ -1440,8 +1492,8 @@ STDMETHODIMP CteArray::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 STDMETHODIMP CteArray::DeleteMemberByDispID(DISPID id)
 {
 	id -= DISPID_COLLECTION_MIN;
-	if (id >= 0 && id < (DISPID)m_pArray.size()) {
-		VariantClear(&m_pArray[id]);
+	if (id >= 0 && id < GetCount()) {
+//		VariantClear(&m_pArray[id]);
 		return S_OK;
 	}
 	return E_FAIL;
@@ -1454,7 +1506,7 @@ STDMETHODIMP CteArray::GetMemberProperties(DISPID id, DWORD grfdexFetch, DWORD *
 
 STDMETHODIMP CteArray::GetMemberName(DISPID id, BSTR *pbstrName)
 {
-	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + (DISPID)m_pArray.size()) {
+	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + GetCount()) {
 		wchar_t pszName[8];
 		swprintf_s(pszName, 8, L"%d", id - DISPID_COLLECTION_MIN);
 		*pbstrName = ::SysAllocString(pszName);
@@ -1471,7 +1523,7 @@ STDMETHODIMP CteArray::GetMemberName(DISPID id, BSTR *pbstrName)
 STDMETHODIMP CteArray::GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid)
 {
 	*pid = (id < DISPID_COLLECTION_MIN) ? DISPID_COLLECTION_MIN : id + 1;
-	return *pid < (DISPID)m_pArray.size() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
+	return *pid < GetCount() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
 }
 
 STDMETHODIMP CteArray::GetNameSpaceParent(IUnknown **ppunk)
@@ -1479,29 +1531,29 @@ STDMETHODIMP CteArray::GetNameSpaceParent(IUnknown **ppunk)
 	return E_NOTIMPL;
 }
 
-VOID CteArray::ItemEx(int nIndex, VARIANT *pVarResult, VARIANT *pVarNew)
+LONG CteArray::GetCount()
+{
+	LONG lUBound, lLBound;
+	SafeArrayGetUBound(m_psa, 1, &lUBound);
+	SafeArrayGetLBound(m_psa, 1, &lLBound);
+	return lUBound - lLBound + 1;
+}
+
+VOID CteArray::ItemEx(LONG nIndex, VARIANT *pVarResult, VARIANT *pVarNew)
 {
 	if (pVarNew) {
-		if (nIndex >= 0) {
-			if (nIndex < (int)m_pArray.size()) {
-				if (m_pArray[nIndex].vt != VT_EMPTY) {
-					VariantClear(&m_pArray[nIndex]);
-				}
-			} else {
-				VARIANT v;
-				VariantInit(&v);
-				m_pArray.resize(nIndex + 1, v);
-			}
-			VariantCopy(&m_pArray[nIndex], pVarNew);
-		} else {
-			VARIANT v;
-			VariantCopy(&v, pVarNew);
-			m_pArray.push_back(v);
+		if (nIndex < 0) {
+			nIndex = GetCount();
 		}
+		if (nIndex >= GetCount()) {
+			SAFEARRAYBOUND sab = { (ULONG)nIndex + 1, 0 };
+			::SafeArrayRedim(m_psa, &sab);
+		}
+		::SafeArrayPutElement(m_psa, (LONG *)&nIndex, pVarNew);
 	}
 	if (pVarResult) {
-		if (nIndex >= 0 && nIndex < (int)m_pArray.size()) {
-			VariantCopy(pVarResult, &m_pArray[nIndex]);
+		if (nIndex >= 0 && nIndex < GetCount()) {
+			::SafeArrayGetElement(m_psa, (LONG *)&nIndex, pVarResult);
 		}
 	}
 }

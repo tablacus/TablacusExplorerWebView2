@@ -11,7 +11,6 @@
 #include <mshtmhst.h>
 #include <wil/com.h>
 #include "WebView2.h"
-
 #pragma comment (lib, "shlwapi.lib")
 //using namespace Microsoft::WRL;
 
@@ -47,7 +46,8 @@ const IID SID_TablacusArray                 = {0xa7a52b88, 0xb449, 0x47bb, { 0xb
 // Base Object
 class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject, public IServiceProvider,
 	public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
-	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
+	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
+	public ICoreWebView2ExecuteScriptCompletedHandler
 {
 public:
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
@@ -161,6 +161,8 @@ public:
 	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Environment *created_environment);
 	//ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Controller *createdController);
+	//ICoreWebView2ExecuteScriptCompletedHandler
+	STDMETHODIMP Invoke(HRESULT result, LPCWSTR resultObjectAsJson);
 
 	CteBase();
 	~CteBase();
@@ -215,10 +217,12 @@ public:
 	CteArray();
 	~CteArray();
 
-	VOID ItemEx(int nIndex, VARIANT *pVarResult, VARIANT *pVarNew);
+	VOID ItemEx(LONG nIndex, VARIANT *pVarResult, VARIANT *pVarNew);
+	LONG GetCount();
 private:
-	std::vector<VARIANT>	m_pArray;
+	SAFEARRAY *m_psa;
 	LONG	m_cRef;
+	BOOL	m_bDestroy;
 };
 
 class CteObjectEx : public IDispatchEx
