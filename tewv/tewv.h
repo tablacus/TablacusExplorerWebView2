@@ -5,6 +5,7 @@
 #include <shlobj.h>
 #include <process.h>
 #include <vector>
+#include <map>
 #include <unordered_map>
 #include <mshtmdid.h>
 //#include <wrl.h>
@@ -249,8 +250,10 @@ public:
 	CteObjectEx();
 	~CteObjectEx();
 private:
-	std::unordered_map<std::wstring, VARIANT>	m_umObject;
+	std::unordered_map<std::wstring, DISPID>	m_umIndex;
+	std::map<DISPID, VARIANT>	m_mData;
 	LONG	m_cRef;
+	DISPID m_dispId;
 };
 
 class CteDispatch : public IDispatch

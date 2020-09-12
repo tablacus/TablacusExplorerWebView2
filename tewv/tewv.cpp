@@ -657,7 +657,7 @@ STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameNam
 	} 
 	teSysFreeString(&m_bstrPath);
 //	m_bstrPath = ::SysAllocString(URL);
-	m_bstrPath = ::SysAllocString(L"C:\\cpp\\TE\\Debug\\script\\blink.html");
+	m_bstrPath = ::SysAllocString(L"C:\\cpp\\TE\\Debug\\script\\index.html");
 	return S_OK;
 }
 
@@ -1295,7 +1295,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			return S_OK;
 
 		case DISPID_TE_COUNT://Count
-			if (nArg >= 0 && wFlags == DISPATCH_PROPERTYPUT) {
+			if (nArg >= 0 && (wFlags & DISPATCH_PROPERTYPUT)) {
 				VARIANT v;
 				VariantInit(&v);
 				sab = { (ULONG)GetIntFromVariant(&pDispParams->rgvarg[nArg]), 0 };
@@ -1428,7 +1428,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			return S_OK;
 */
 		case DISPID_PROPERTYPUT:
-			if (wFlags == DISPATCH_PROPERTYPUT && nArg >= 0) {
+			if ((wFlags & DISPATCH_PROPERTYPUT) && nArg >= 0) {
 				if (pDispParams->rgvarg[nArg].vt == (VT_ARRAY | VT_VARIANT)) {
 					if (m_bDestroy) {
 						m_bDestroy = FALSE;
@@ -1561,14 +1561,16 @@ VOID CteArray::ItemEx(LONG nIndex, VARIANT *pVarResult, VARIANT *pVarNew)
 CteObjectEx::CteObjectEx()
 {
 	m_cRef = 1;
+	m_dispId = DISPID_COLLECTION_MIN;
 }
 
 CteObjectEx::~CteObjectEx()
 {
-	for(std::unordered_map<std::wstring, VARIANT>::iterator itr = m_umObject.begin(); itr != m_umObject.end(); ++itr) {
+	for(auto itr = m_mData.begin(); itr != m_mData.end(); ++itr) {
 		VariantClear(&itr->second);
 	}
-	m_umObject.clear();
+	m_umIndex.clear();
+	m_mData.clear();
 }
 
 STDMETHODIMP CteObjectEx::QueryInterface(REFIID riid, void **ppvObject)
@@ -1610,14 +1612,13 @@ STDMETHODIMP CteObjectEx::GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInf
 
 STDMETHODIMP CteObjectEx::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-	auto itr = m_umObject.find(*rgszNames);
-	if (itr == m_umObject.end()) {
-		VARIANT v;
-		VariantInit(&v);
-		m_umObject[*rgszNames] = v;
-		itr = m_umObject.find(*rgszNames);
+	auto itr = m_umIndex.find(*rgszNames);
+	if (itr == m_umIndex.end()) {
+		*rgDispId = m_dispId;
+		m_umIndex[*rgszNames] = m_dispId++;
+		return  (m_dispId < TE_PROPERTY) ? S_OK : DISP_E_UNKNOWNNAME;
 	}
-	*rgDispId = std::distance(m_umObject.begin(), itr) + DISPID_COLLECTION_MIN;
+	*rgDispId = itr->second;
 	return S_OK;
 }
 
@@ -1630,25 +1631,23 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 		teSetObject(pVarResult, this);
 		return S_OK;
 	}
-	if (dispIdMember >= DISPID_COLLECTION_MIN && dispIdMember < DISPID_COLLECTION_MIN + (DISPID)m_umObject.size()) {
-		auto itr = m_umObject.begin();
-		std::advance(itr, dispIdMember - DISPID_COLLECTION_MIN);
+	if (dispIdMember >= DISPID_COLLECTION_MIN && dispIdMember < TE_PROPERTY) {
+		auto itr = m_mData.find(dispIdMember);
+		if (itr == m_mData.end()) {
+			VARIANT v;
+			VariantInit(&v);
+			m_mData[dispIdMember] = v;
+			itr = m_mData.find(dispIdMember);
+		}
 		int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
-		if (nArg >= 0) {
-			VariantClear(&itr->second);
-			if (pDispParams->rgvarg[nArg].vt != VT_EMPTY) {
+		if (wFlags & DISPATCH_PROPERTYGET) {
+			VariantCopy(pVarResult, &itr->second);
+		} else if (wFlags & DISPATCH_PROPERTYPUT) {
+			if (nArg >= 0 && pDispParams->rgvarg[nArg].vt != VT_EMPTY) {
+				VariantClear(&itr->second);
 				VariantCopy(&itr->second, &pDispParams->rgvarg[nArg]);
 			} else {
-				m_umObject.erase(itr);
-				return S_OK;
-			}
-		} else if (itr->second.vt == VT_EMPTY) {
-			m_umObject.erase(itr);
-			return S_OK;
-		}
-		if (pVarResult) {
-			if (itr != m_umObject.end()) {
-				VariantCopy(pVarResult, &itr->second);
+				DeleteMemberByDispID(dispIdMember);
 			}
 		}
 		return S_OK;
@@ -1669,21 +1668,23 @@ STDMETHODIMP CteObjectEx::InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS
 
 STDMETHODIMP CteObjectEx::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 {
-	auto itr = m_umObject.find(bstrName);
-	if (itr != m_umObject.end()) {
-		VariantClear(&itr->second);
-		m_umObject.erase(itr);
+	auto itr = m_umIndex.find(bstrName);
+	if (itr != m_umIndex.end()) {
+		auto itr2 = m_mData.find(itr->second);
+		if (itr2 != m_mData.end()) {
+			VariantClear(&itr2->second);
+		}
+		m_umIndex.erase(itr);
 	}
 	return S_OK;
 }
 
 STDMETHODIMP CteObjectEx::DeleteMemberByDispID(DISPID id)
 {
-	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + (DISPID)m_umObject.size()) {
-		auto itr = m_umObject.begin();
-		std::advance(itr, id - DISPID_COLLECTION_MIN);
-		VariantClear(&itr->second);
-		m_umObject.erase(itr);
+	BSTR bstrName;
+	if SUCCEEDED(GetMemberName(id, &bstrName)) {
+		DeleteMemberByName(bstrName, fdexNameCaseSensitive);
+		teSysFreeString(&bstrName);
 	}
 	return S_OK;
 }
@@ -1695,19 +1696,33 @@ STDMETHODIMP CteObjectEx::GetMemberProperties(DISPID id, DWORD grfdexFetch, DWOR
 
 STDMETHODIMP CteObjectEx::GetMemberName(DISPID id, BSTR *pbstrName)
 {
-	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + (DISPID)m_umObject.size()) {
-		auto itr = m_umObject.begin();
-		std::advance(itr, id - DISPID_COLLECTION_MIN);
-		*pbstrName = ::SysAllocString(itr->first.data());
-		return S_OK;
+	if (id >= DISPID_COLLECTION_MIN && id < TE_METHOD) {
+		for(auto itr = m_umIndex.begin(); itr != m_umIndex.end(); ++itr) {
+			if (id == itr->second) {
+				*pbstrName = ::SysAllocString(itr->first.data());
+				return S_OK;
+			}
+		}
 	}
-	return E_NOTIMPL;
+	return E_FAIL;
 }
 
 STDMETHODIMP CteObjectEx::GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid)
 {
-	*pid = (id < DISPID_COLLECTION_MIN) ? DISPID_COLLECTION_MIN : id + 1;
-	return *pid < (DISPID)m_umObject.size() + DISPID_COLLECTION_MIN ? S_OK : S_FALSE;
+	auto itr = m_mData.find(id);
+	if (itr == m_mData.end()) {
+		if (id >= DISPID_COLLECTION_MIN) {
+			return S_FALSE;
+		}
+		itr = m_mData.begin();
+	} else {
+		++itr;
+	}
+	if (itr != m_mData.end()) {
+		*pid = itr->first;
+		return S_OK;
+	}
+	return S_FALSE;
 }
 
 STDMETHODIMP CteObjectEx::GetNameSpaceParent(IUnknown **ppunk)
