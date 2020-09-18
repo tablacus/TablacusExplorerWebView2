@@ -43,6 +43,8 @@ const IID SID_TablacusArray                 = {0xa7a52b88, 0xb449, 0x47bb, { 0xb
 #define GetPtrFromVariant(pv)	GetIntFromVariant(pv)
 #endif
 
+typedef HRESULT (WINAPI * LPFNCreateCoreWebView2EnvironmentWithOptions)(PCWSTR browserExecutableFolder, PCWSTR userDataFolder, ICoreWebView2EnvironmentOptions* environmentOptions, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler* environment_created_handler);
+typedef HRESULT (WINAPI * LPFNGetAvailableCoreWebView2BrowserVersionString)(PCWSTR browserExecutableFolder, LPWSTR* versionInfo);
 
 // Base Object
 class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject, public IServiceProvider,

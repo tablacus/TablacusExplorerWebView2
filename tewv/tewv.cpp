@@ -10,8 +10,9 @@ const TCHAR g_szProgid[] = TEXT("Tablacus.WebView2");
 const TCHAR g_szClsid[] = TEXT("{55BBF1B8-0D30-4908-BE0C-D576612A0F48}");
 std::vector<DWORD>	g_pIconOverlayHandlers;
 HINSTANCE	g_hinstDll = NULL;
-CteBase		*g_pBase = NULL;
+HMODULE		g_hWebView2Loader = NULL;
 LONG		g_lLocks = 0;
+LPFNCreateCoreWebView2EnvironmentWithOptions _CreateCoreWebView2EnvironmentWithOptions = NULL;
 
 std::unordered_map<std::wstring, DISPID> g_umArray = {
 	{ L"Item", DISPID_TE_ITEM },
@@ -222,21 +223,6 @@ BOOL teSetObjectRelease(VARIANT *pv, PVOID pObj)
 	return false;
 }
 
-VOID teSetSZA(VARIANT *pv, LPCSTR lpstr, int nCP)
-{
-	if (pv) {
-		int nLenW = MultiByteToWideChar(nCP, 0, lpstr, -1, NULL, NULL);
-		if (nLenW) {
-			pv->bstrVal = ::SysAllocStringLen(NULL, nLenW - 1);
-			pv->bstrVal[0] = NULL;
-			MultiByteToWideChar(nCP, 0, (LPCSTR)lpstr, -1, pv->bstrVal, nLenW);
-		} else {
-			pv->bstrVal = NULL;
-		}
-		pv->vt = VT_BSTR;
-	}
-}
-
 VOID teSetSZ(VARIANT *pv, LPCWSTR lpstr)
 {
 	if (pv) {
@@ -297,73 +283,6 @@ BOOL FindUnknown(VARIANT *pv, IUnknown **ppunk)
 	}
 	*ppunk = NULL;
 	return FALSE;
-}
-
-BSTR GetMemoryFromVariant(VARIANT *pv, BOOL *pbDelete, LONG_PTR *pLen)
-{
-	if (pv->vt == (VT_VARIANT | VT_BYREF)) {
-		return GetMemoryFromVariant(pv->pvarVal, pbDelete, pLen);
-	}
-	BSTR pMemory = NULL;
-	*pbDelete = FALSE;
-	if (pLen) {
-		if (pv->vt == VT_BSTR || pv->vt == VT_LPWSTR) {
-			return pv->bstrVal;
-		}
-	}
-	IUnknown *punk;
-	if (FindUnknown(pv, &punk)) {
-		IStream *pStream;
-		if SUCCEEDED(punk->QueryInterface(IID_PPV_ARGS(&pStream))) {
-			ULARGE_INTEGER uliSize;
-			if (pLen) {
-				LARGE_INTEGER liOffset;
-				liOffset.QuadPart = 0;
-				pStream->Seek(liOffset, STREAM_SEEK_END, &uliSize);
-				pStream->Seek(liOffset, STREAM_SEEK_SET, NULL);
-			} else {
-				uliSize.QuadPart = 2048;
-			}
-			pMemory = ::SysAllocStringByteLen(NULL, uliSize.LowPart > 2048 ? uliSize.LowPart : 2048);
-			if (pMemory) {
-				if (uliSize.LowPart < 2048) {
-					::ZeroMemory(pMemory, 2048);
-				}
-				*pbDelete = TRUE;
-				ULONG cbRead;
-				pStream->Read(pMemory, uliSize.LowPart, &cbRead);
-				if (pLen) {
-					*pLen = cbRead;
-				}
-			}
-			pStream->Release();
-		}
-	} else if (pv->vt == (VT_ARRAY | VT_I1) || pv->vt == (VT_ARRAY | VT_UI1) || pv->vt == (VT_ARRAY | VT_I1 | VT_BYREF) || pv->vt == (VT_ARRAY | VT_UI1 | VT_BYREF)) {
-		LONG lUBound, lLBound, nSize;
-		SAFEARRAY *psa = (pv->vt & VT_BYREF) ? pv->pparray[0] : pv->parray;
-		PVOID pvData;
-		if (::SafeArrayAccessData(psa, &pvData) == S_OK) {
-			SafeArrayGetUBound(psa, 1, &lUBound);
-			SafeArrayGetLBound(psa, 1, &lLBound);
-			nSize = lUBound - lLBound + 1;
-			pMemory = ::SysAllocStringByteLen(NULL, nSize > 2048 ? nSize : 2048);
-			if (pMemory) {
-				if (nSize < 2048) {
-					::ZeroMemory(pMemory, 2048);
-				}
-				::CopyMemory(pMemory, pvData, nSize);
-				if (pLen) {
-					*pLen = nSize;
-				}
-				*pbDelete = TRUE;
-			}
-			::SafeArrayUnaccessData(psa);
-		}
-		return pMemory;
-	} else if (!pLen) {
-		return (BSTR)GetPtrFromVariant(pv);
-	}
-	return pMemory;
 }
 
 HRESULT tePutProperty0(IUnknown *punk, LPOLESTR sz, VARIANT *pv, DWORD grfdex)
@@ -478,11 +397,30 @@ BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 {
 	switch (dwReason) {
 	case DLL_PROCESS_ATTACH:
-		g_pBase = new CteBase();
-		g_hinstDll = hinstDll;
+		g_hWebView2Loader = LoadLibrary(L"WebView2Loader.dll");
+		if (!g_hWebView2Loader) {
+			WCHAR pszPath[MAX_PATH * 2];
+			g_hinstDll = hinstDll;
+			GetModuleFileName(hinstDll, pszPath, MAX_PATH * 2);
+			lstrcpy(PathFindFileName(pszPath), L"WebView2Loader.dll");
+			g_hWebView2Loader = LoadLibrary(pszPath);
+		}
+		if (g_hWebView2Loader) {
+			LPFNGetAvailableCoreWebView2BrowserVersionString _GetAvailableCoreWebView2BrowserVersionString = NULL;
+			*(FARPROC *)&_GetAvailableCoreWebView2BrowserVersionString = GetProcAddress(g_hWebView2Loader, "GetAvailableCoreWebView2BrowserVersionString");
+			if (_GetAvailableCoreWebView2BrowserVersionString) {
+				LPWSTR versionInfo;
+				if (_GetAvailableCoreWebView2BrowserVersionString(NULL, &versionInfo) == S_OK) {
+					CoTaskMemFree(versionInfo);
+					*(FARPROC *)&_CreateCoreWebView2EnvironmentWithOptions = GetProcAddress(g_hWebView2Loader, "CreateCoreWebView2EnvironmentWithOptions");
+				}
+			}
+		}
 		break;
 	case DLL_PROCESS_DETACH:
-		SafeRelease(&g_pBase);
+		if (g_hWebView2Loader) {
+			FreeLibrary(g_hWebView2Loader);
+		}
 		break;
 	}
 	return TRUE;
@@ -1007,9 +945,11 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
-		CreateCoreWebView2EnvironmentWithOptions(NULL, NULL, NULL, this);
- 		ShowWindow(hwndParent, SW_SHOWNORMAL);
-		return S_OK;
+		if (_CreateCoreWebView2EnvironmentWithOptions) {
+			_CreateCoreWebView2EnvironmentWithOptions(NULL, NULL, NULL, this);
+			ShowWindow(hwndParent, SW_SHOWNORMAL);
+			return S_OK;
+		}
 	}
 	return E_NOTIMPL;
 }
@@ -1197,7 +1137,11 @@ STDMETHODIMP CteClassFactory::CreateInstance(IUnknown *pUnkOuter, REFIID riid, v
 	if (pUnkOuter != NULL) {
 		return CLASS_E_NOAGGREGATION;
 	}
-	return g_pBase->QueryInterface(riid, ppvObject);
+	if (!_CreateCoreWebView2EnvironmentWithOptions) {
+		return CLASS_E_CLASSNOTAVAILABLE;
+	}
+	*ppvObject = new CteBase();
+	return S_OK;
 }
 
 STDMETHODIMP CteClassFactory::LockServer(BOOL fLock)
@@ -1334,7 +1278,9 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				}
 				VARIANT *pv;
 				if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
+					::VariantClear(pv);
 					::CopyMemory(pv, &pv[1], sizeof(VARIANT) * --n);
+					::VariantInit(&pv[n]);
 					::SafeArrayUnaccessData(m_psa);
 					SAFEARRAYBOUND sab = { (ULONG)n, 0 };
 					::SafeArrayRedim(m_psa, &sab);
@@ -1450,11 +1396,8 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 					VARIANT v;
 					VariantInit(&v);
 					ItemEx(dispIdMember - DISPID_COLLECTION_MIN, &v, NULL);
-					IDispatch *pdisp;
-					HRESULT hr = E_FAIL;
-					if (GetDispatch(&v, &pdisp)) {
-						hr = Invoke5(pdisp, DISPID_VALUE, wFlags, pVarResult, - nArg - 1, pDispParams->rgvarg);
-						pdisp->Release();
+					if (v.vt == VT_DISPATCH) {
+						Invoke5(v.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg);
 					}
 					VariantClear(&v);
 					return S_OK;
@@ -1493,8 +1436,9 @@ STDMETHODIMP CteArray::DeleteMemberByDispID(DISPID id)
 {
 	id -= DISPID_COLLECTION_MIN;
 	if (id >= 0 && id < GetCount()) {
-//		VariantClear(&m_pArray[id]);
-		return S_OK;
+		VARIANT v;
+		VariantInit(&v);
+		return ::SafeArrayPutElement(m_psa, &id, &v);
 	}
 	return E_FAIL;
 }
@@ -1632,22 +1576,28 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 		return S_OK;
 	}
 	if (dispIdMember >= DISPID_COLLECTION_MIN && dispIdMember < TE_PROPERTY) {
-		auto itr = m_mData.find(dispIdMember);
-		if (itr == m_mData.end()) {
-			VARIANT v;
-			VariantInit(&v);
-			m_mData[dispIdMember] = v;
-			itr = m_mData.find(dispIdMember);
-		}
-		int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
-		if (wFlags & DISPATCH_PROPERTYGET) {
-			VariantCopy(pVarResult, &itr->second);
+		if (wFlags & DISPATCH_METHOD) {
+			auto itr = m_mData.find(dispIdMember);
+			if (itr != m_mData.end()) {
+				if (itr->second.vt == VT_DISPATCH) {
+					Invoke5(itr->second.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg);
+				}
+			}
+		} else if (wFlags & DISPATCH_PROPERTYGET) {
+			auto itr = m_mData.find(dispIdMember);
+			if (itr != m_mData.end()) {
+				VariantCopy(pVarResult, &itr->second);
+			}
 		} else if (wFlags & DISPATCH_PROPERTYPUT) {
-			if (nArg >= 0 && pDispParams->rgvarg[nArg].vt != VT_EMPTY) {
-				VariantClear(&itr->second);
-				VariantCopy(&itr->second, &pDispParams->rgvarg[nArg]);
-			} else {
-				DeleteMemberByDispID(dispIdMember);
+			int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
+			if (nArg >= 0) {
+				if (pDispParams->rgvarg[nArg].vt != VT_EMPTY) {
+					VARIANT *pv = &m_mData[dispIdMember];
+					VariantClear(pv);
+					VariantCopy(pv, &pDispParams->rgvarg[nArg]);
+				} else {
+					DeleteMemberByDispID(dispIdMember);
+				}
 			}
 		}
 		return S_OK;
@@ -1674,7 +1624,6 @@ STDMETHODIMP CteObjectEx::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 		if (itr2 != m_mData.end()) {
 			VariantClear(&itr2->second);
 		}
-		m_umIndex.erase(itr);
 	}
 	return S_OK;
 }
