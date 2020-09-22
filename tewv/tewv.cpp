@@ -462,11 +462,6 @@ STDAPI DllUnregisterServer(void)
 CteBase::CteBase()
 {
 	m_cRef = 1;
-	CoCreateInstance(CLSID_WebBrowser, NULL, CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER, IID_PPV_ARGS(&m_pWebBrowser));
-	m_pWebBrowser->QueryInterface(IID_PPV_ARGS(&m_pOleObject));
-	m_pWebBrowser->QueryInterface(IID_PPV_ARGS(&m_pOleInPlaceObject));
-	m_pWebBrowser->QueryInterface(IID_PPV_ARGS(&m_pDispatch));
-
 	m_pOleClientSite = NULL;
 	m_bstrPath = NULL;
 }
@@ -475,12 +470,8 @@ CteBase::~CteBase()
 {
 	teSysFreeString(&m_bstrPath);
 	SafeRelease(&m_pOleClientSite);
-
-
+	
 	SafeRelease(&m_pDispatch);
-	SafeRelease(&m_pOleInPlaceObject);
-	SafeRelease(&m_pOleObject);
-	SafeRelease(&m_pWebBrowser);
 }
 
 STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
@@ -500,9 +491,6 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		{ 0 },
 	};
 	return QISearch(this, qit, riid, ppvObject);
-/*	HRESULT hr = QISearch(this, qit, riid, ppvObject);
-	HRESULT hr = E_FAIL;
-	return SUCCEEDED(hr) ? hr : m_pWebBrowser->QueryInterface(riid, ppvObject);*/
 }
 
 STDMETHODIMP_(ULONG) CteBase::AddRef()
@@ -569,22 +557,22 @@ STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD w
 //IWebBrowser
 STDMETHODIMP CteBase::GoBack(void)
 {
-	return m_pWebBrowser->GoBack();
+	return m_webviewWindow->GoBack();
 }
 
 STDMETHODIMP CteBase::GoForward(void)
 {
-	return m_pWebBrowser->GoForward();
+	return m_webviewWindow->GoForward();
 }
 
 STDMETHODIMP CteBase::GoHome(void)
 {
-	return m_pWebBrowser->GoHome();
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::GoSearch(void)
 {
-	return m_pWebBrowser->GoSearch();
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameName, VARIANT *PostData, VARIANT *Headers)
@@ -601,113 +589,122 @@ STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameNam
 
 STDMETHODIMP CteBase::Refresh(void)
 {
-	return m_pWebBrowser->Refresh();
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::Refresh2(VARIANT *Level)
 {
-	return m_pWebBrowser->Refresh2(Level);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::Stop(void)
 {
-	return m_pWebBrowser->Stop();
+	return m_webviewWindow->Stop();
 }
 
 STDMETHODIMP CteBase::get_Application(IDispatch **ppDisp)
 {
-	return m_pWebBrowser->get_Application(ppDisp);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Parent(IDispatch **ppDisp)
 {
-	return m_pWebBrowser->get_Parent(ppDisp);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Container(IDispatch **ppDisp)
 {
-	return m_pWebBrowser->get_Container(ppDisp);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Document(IDispatch **ppDisp)
 {
-	return m_pWebBrowser->get_Document(ppDisp);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_TopLevelContainer(VARIANT_BOOL *pBool)
 {
-	return m_pWebBrowser->get_TopLevelContainer(pBool);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Type(BSTR *Type)
 {
-	return m_pWebBrowser->get_Type(Type);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Left(long *pl)
 {
-	return m_pWebBrowser->get_Left(pl);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_Left(long Left)
 {
-	return m_pWebBrowser->put_Left(Left);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Top(long *pl)
 {
-	return m_pWebBrowser->get_Top(pl);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_Top(long Top)
 {
-	return m_pWebBrowser->put_Top(Top);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Width(long *pl)
 {
-	return m_pWebBrowser->get_Width(pl);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_Width(long Width)
 {
-	return m_pWebBrowser->put_Width(Width);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Height(long *pl)
 {
-	return m_pWebBrowser->get_Height(pl);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_Height(long Height)
 {
-	return m_pWebBrowser->put_Height(Height);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_LocationName(BSTR *LocationName)
 {
-	return m_pWebBrowser->get_LocationName(LocationName);
+	*LocationName = ::SysAllocString(m_bstrPath);
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_LocationURL(BSTR *LocationURL)
 {
-	return m_pWebBrowser->get_LocationURL(LocationURL);
+	*LocationURL = ::SysAllocString(m_bstrPath);
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Busy(VARIANT_BOOL *pBool)
 {
-	return m_pWebBrowser->get_Busy(pBool);
+	*pBool = VARIANT_FALSE;
+	return S_OK;
 }
 
 //IWebBrowserApp
 STDMETHODIMP CteBase::Quit(void)
 {
-	return m_pWebBrowser->Quit();
+	return m_webviewWindow->Stop();
 }
 
 STDMETHODIMP CteBase::ClientToWindow(int *pcx, int *pcy)
 {
-	return m_pWebBrowser->ClientToWindow(pcx, pcy);
+	HWND hwnd;
+	GetWindow(&hwnd);
+	POINT pt = { *pcx, *pcy };
+	ClientToScreen(hwnd, &pt);
+	*pcx = pt.x;
+	*pcy = pt.y;
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::PutProperty(BSTR Property, VARIANT vtValue)
@@ -724,82 +721,92 @@ STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
 {
-	return m_pWebBrowser->get_Name(Name);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_HWND(SHANDLE_PTR *pHWND)
 {
-	return m_pWebBrowser->get_HWND(pHWND);
+	HWND hwnd;
+	HRESULT hr = m_webviewController->get_ParentWindow(&hwnd);
+	*pHWND = (HANDLE_PTR)hwnd;
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_FullName(BSTR *FullName)
 {
-	return m_pWebBrowser->get_FullName(FullName);
+	WCHAR pszFullName[MAX_PATH];
+	GetModuleFileName(NULL, pszFullName, MAX_PATH);
+	*FullName = ::SysAllocString(pszFullName);
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Path(BSTR *Path)
 {
-	return m_pWebBrowser->get_Path(Path);
+	*Path = ::SysAllocString(m_bstrPath);
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Visible(VARIANT_BOOL *pBool)
 {
-	return m_pWebBrowser->get_Visible(pBool);
+	BOOL bVisible;
+	HRESULT hr = m_webviewController->get_IsVisible(&bVisible);
+	*pBool = bVisible ? VARIANT_TRUE : VARIANT_FALSE;
+	return hr;
 }
 
 STDMETHODIMP CteBase::put_Visible(VARIANT_BOOL Value)
 {
-	return m_pWebBrowser->put_Visible(Value);
+	return m_webviewController ? m_webviewController->put_IsVisible(Value) : S_OK;
 }
 
 STDMETHODIMP CteBase::get_StatusBar(VARIANT_BOOL *pBool)
 {
-	return m_pWebBrowser->get_StatusBar(pBool);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_StatusBar(VARIANT_BOOL Value)
 {
-	return m_pWebBrowser->put_StatusBar(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_StatusText(BSTR *StatusText)
 {
-	return m_pWebBrowser->get_StatusText(StatusText);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_StatusText(BSTR StatusText)
 {
-	return m_pWebBrowser->put_StatusText(StatusText);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_ToolBar(int *Value)
 {
-	return m_pWebBrowser->get_ToolBar(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_ToolBar(int Value)
 {
-	return m_pWebBrowser->put_ToolBar(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_MenuBar(VARIANT_BOOL *Value)
 {
-	return m_pWebBrowser->get_MenuBar(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_MenuBar(VARIANT_BOOL Value)
 {
-	return m_pWebBrowser->put_MenuBar(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_FullScreen(VARIANT_BOOL *pbFullScreen)
 {
-	return m_pWebBrowser->get_FullScreen(pbFullScreen);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_FullScreen(VARIANT_BOOL bFullScreen)
 {
-	return m_pWebBrowser->put_FullScreen(bFullScreen);
+	return E_NOTIMPL;
 }
 //IWebBrowser2
 STDMETHODIMP CteBase::Navigate2(VARIANT *URL, VARIANT *Flags, VARIANT *TargetFrameName, VARIANT *PostData, VARIANT *Headers)
@@ -809,91 +816,93 @@ STDMETHODIMP CteBase::Navigate2(VARIANT *URL, VARIANT *Flags, VARIANT *TargetFra
 
 STDMETHODIMP CteBase::QueryStatusWB(OLECMDID cmdID, OLECMDF *pcmdf)
 {
-	return m_pWebBrowser->QueryStatusWB(cmdID, pcmdf);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::ExecWB(OLECMDID cmdID, OLECMDEXECOPT cmdexecopt, VARIANT *pvaIn, VARIANT *pvaOut)
 {
-	return m_pWebBrowser->ExecWB(cmdID, cmdexecopt, pvaIn, pvaOut);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::ShowBrowserBar(VARIANT *pvaClsid, VARIANT *pvarShow, VARIANT *pvarSize)
 {
-	return m_pWebBrowser->ShowBrowserBar(pvaClsid, pvarShow, pvarSize);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_ReadyState(READYSTATE *plReadyState)
 {
-	return m_pWebBrowser->get_ReadyState(plReadyState);
+	*plReadyState = READYSTATE_COMPLETE;
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Offline(VARIANT_BOOL *pbOffline)
 {
-	return m_pWebBrowser->get_Offline(pbOffline);
+	*pbOffline = VARIANT_FALSE;
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::put_Offline(VARIANT_BOOL bOffline)
 {
-	return m_pWebBrowser->put_Offline(bOffline);
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Silent(VARIANT_BOOL *pbSilent)
 {
-	return m_pWebBrowser->get_Silent(pbSilent);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_Silent(VARIANT_BOOL bSilent)
 {
-	return m_pWebBrowser->put_Silent(bSilent);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_RegisterAsBrowser(VARIANT_BOOL *pbRegister)
 {
-	return m_pWebBrowser->get_RegisterAsBrowser(pbRegister);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_RegisterAsBrowser(VARIANT_BOOL bRegister)
 {
-	return m_pWebBrowser->put_RegisterAsBrowser(bRegister);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_RegisterAsDropTarget(VARIANT_BOOL *pbRegister)
 {
-	return m_pWebBrowser->get_RegisterAsDropTarget(pbRegister);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_RegisterAsDropTarget(VARIANT_BOOL bRegister)
 {
-	return m_pWebBrowser->put_RegisterAsDropTarget(bRegister);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_TheaterMode(VARIANT_BOOL *pbRegister)
 {
-	return m_pWebBrowser->get_TheaterMode(pbRegister);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_TheaterMode(VARIANT_BOOL bRegister)
 {
-	return m_pWebBrowser->put_TheaterMode(bRegister);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_AddressBar(VARIANT_BOOL *Value)
 {
-	return m_pWebBrowser->get_AddressBar(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_AddressBar(VARIANT_BOOL Value)
 {
-	return m_pWebBrowser->put_AddressBar(Value);
+	return E_NOTIMPL;
 }
 STDMETHODIMP CteBase::get_Resizable(VARIANT_BOOL *Value)
 {
-	return m_pWebBrowser->get_Resizable(Value);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::put_Resizable(VARIANT_BOOL Value)
 {
-	return m_pWebBrowser->put_Resizable(Value);
+	return E_NOTIMPL;
 }
 
 //IOleObject
@@ -903,7 +912,7 @@ STDMETHODIMP CteBase::SetClientSite(IOleClientSite *pClientSite)
 	if (pClientSite) {
 		pClientSite->QueryInterface(IID_PPV_ARGS(&m_pOleClientSite));
 	}
-	return m_pOleObject->SetClientSite(pClientSite);
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::GetClientSite(IOleClientSite **ppClientSite)
@@ -991,12 +1000,12 @@ STDMETHODIMP CteBase::GetExtent(DWORD dwDrawAspect, SIZEL *psizel)
 
 STDMETHODIMP CteBase::Advise(IAdviseSink *pAdvSink, DWORD *pdwConnection)
 {
-	return m_pOleObject->Advise(pAdvSink, pdwConnection);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::Unadvise(DWORD dwConnection)
 {
-	return m_pOleObject->Unadvise(dwConnection);
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::EnumAdvise(IEnumSTATDATA **ppenumAdvise)
@@ -1017,24 +1026,26 @@ STDMETHODIMP CteBase::SetColorScheme(LOGPALETTE *pLogpal)
 //IOleWindow
 STDMETHODIMP CteBase::GetWindow(HWND *phwnd)
 {
-	*phwnd = FindWindowA("Chrome_WidgetWin_0", NULL);
-	return *phwnd ? S_OK : E_FAIL;
+	if (m_webviewController) {
+		return m_webviewController->get_ParentWindow(phwnd);
+	}
+	return E_FAIL;
 }
 
 STDMETHODIMP CteBase::ContextSensitiveHelp(BOOL fEnterMode)
 {
-	return m_pOleInPlaceObject->ContextSensitiveHelp(fEnterMode);
+	return E_NOTIMPL;
 }
 
 //IOleInPlaceObject
 STDMETHODIMP CteBase::InPlaceDeactivate(void)
 {
-	return m_pOleInPlaceObject->InPlaceDeactivate();
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::UIDeactivate(void)
 {
-	return m_pOleInPlaceObject->UIDeactivate();
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
@@ -1044,7 +1055,7 @@ STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 
 STDMETHODIMP CteBase::ReactivateAndUndo(void)
 {
-	return m_pOleInPlaceObject->ReactivateAndUndo();
+	return E_NOTIMPL;
 }
 
 //IServiceProvider
@@ -1084,8 +1095,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 			VARIANT v;
 			if SUCCEEDED(pDocHostUIHandler->GetExternal(&v.pdispVal)) {
 				v.vt = VT_DISPATCH;
-				HRESULT hr = m_webviewWindow->AddHostObjectToScript(L"te", &v);
-				Sleep(hr);
+				m_webviewWindow->AddHostObjectToScript(L"te", &v);
 			}
 			pDocHostUIHandler->Release();
 		}
@@ -1345,7 +1355,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				}
 			}
 			return S_OK;
-/*
+
 		case TE_METHOD + 6://Slice
 		case TE_METHOD + 7://Splice
 			CteArray *pNewArray;
@@ -1353,26 +1363,39 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				pNewArray = new CteArray();
 			}
 			if (nArg >= 0) {
-				UINT nStart = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
-				size_t nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : MAXINT;
-				if (nStart + nLen > m_pArray.size()) {
-					nLen = m_pArray.size() - nStart;
+				LONG nStart = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
+				LONG nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : MAXINT;
+				if (nStart + nLen > GetCount()) {
+					nLen = GetCount() - nStart;
 				}
 				VARIANT v;
 				VariantInit(&v);
 				if (pVarResult) {
-					for (UINT i = nStart; i < nLen; ++i) {
+					for (LONG i = nStart; i < nLen; ++i) {
 						ItemEx(i, &v, NULL);
 						pNewArray->ItemEx(-1, NULL, &v);
+						VariantClear(&v);
 					}
 					teSetObjectRelease(pVarResult, pNewArray);
 				}
 				if (dispIdMember == TE_METHOD + 7) {//Splice
-					m_pArray.erase(m_pArray.begin() + nStart, m_pArray.begin() + nStart + nLen);
+					int n = GetCount();
+					if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
+						for (int i = nLen; --i >= 0;) {
+							VariantClear(&pv[nStart + i]);
+						}
+						::CopyMemory(&pv[nStart], &pv[nStart + nLen], sizeof(VARIANT) * (n - (nStart + nLen)));
+						for (int i = nLen; i > 0; --i) {
+							::VariantInit(&pv[n - i]);
+						}
+						::SafeArrayUnaccessData(m_psa);
+					}
+					sab = { (ULONG)n - nLen, 0 };
+					::SafeArrayRedim(m_psa, &sab);
 				}
 			}
 			return S_OK;
-*/
+
 		case DISPID_PROPERTYPUT:
 			if ((wFlags & DISPATCH_PROPERTYPUT) && nArg >= 0) {
 				if (pDispParams->rgvarg[nArg].vt == (VT_ARRAY | VT_VARIANT)) {

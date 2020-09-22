@@ -178,9 +178,6 @@ private:
 	wil::com_ptr<ICoreWebView2> m_webviewWindow;
 	BSTR m_bstrPath;
 
-	IWebBrowser2 *m_pWebBrowser;
-	IOleObject *m_pOleObject;
-	IOleInPlaceObject *m_pOleInPlaceObject;
 	IDispatch *m_pDispatch;
 };
 
