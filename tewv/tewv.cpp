@@ -471,7 +471,7 @@ CteBase::~CteBase()
 	teSysFreeString(&m_bstrPath);
 	SafeRelease(&m_pOleClientSite);
 	
-	SafeRelease(&m_pDispatch);
+//	SafeRelease(&m_pDispatch);
 }
 
 STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
@@ -524,13 +524,13 @@ STDMETHODIMP CteBase::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cName
 	OutputDebugStringA("GetIDsOfNames:");
 	OutputDebugString(rgszNames[0]);
 	OutputDebugStringA("\n");
-	return m_pDispatch->GetIDsOfNames(riid, rgszNames, cNames, lcid, rgDispId);
+	return E_NOTIMPL;
+//	return m_pDispatch->GetIDsOfNames(riid, rgszNames, cNames, lcid, rgDispId);
 }
 
 STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-	return m_pDispatch->Invoke(dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
-
+//	return m_pDispatch->Invoke(dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 	int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
 	HRESULT hr = S_OK;
 	try {

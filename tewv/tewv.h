@@ -178,7 +178,7 @@ private:
 	wil::com_ptr<ICoreWebView2> m_webviewWindow;
 	BSTR m_bstrPath;
 
-	IDispatch *m_pDispatch;
+//	IDispatch *m_pDispatch;
 };
 
 // Class Factory

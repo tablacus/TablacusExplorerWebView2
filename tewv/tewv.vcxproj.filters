@@ -35,6 +35,7 @@
       <Filter>Header Files</Filter>
     </None>
     <None Include="packages.config" />
+    <None Include="$(MSBuildThisFileDirectory)$(EffectivePlatform)\WebView2Loader.dll" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="tewv.rc">
