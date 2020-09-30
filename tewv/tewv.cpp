@@ -375,12 +375,13 @@ BOOL GetDispatch(VARIANT *pv, IDispatch **ppdisp)
 
 HRESULT teGetProperty(IDispatch *pdisp, LPOLESTR sz, VARIANT *pv)
 {
-	DISPID dispid;
+/*	DISPID dispid;
 	HRESULT hr = pdisp->GetIDsOfNames(IID_NULL, &sz, 1, LOCALE_USER_DEFAULT, &dispid);
 	if (hr == S_OK) {
 		hr = Invoke5(pdisp, dispid, DISPATCH_PROPERTYGET, pv, 0, NULL);
 	}
-	return hr;
+	return hr;*/
+	return E_NOTIMPL;
 }
 
 VOID teVariantChangeType(__out VARIANTARG * pvargDest,
@@ -582,8 +583,15 @@ STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameNam
 		return m_webviewWindow->Navigate(URL);
 	} 
 	teSysFreeString(&m_bstrPath);
-//	m_bstrPath = ::SysAllocString(URL);
-	m_bstrPath = ::SysAllocString(L"C:\\cpp\\TE\\Debug\\script\\index.html");
+	m_bstrPath = ::SysAllocStringLen(URL, ::SysStringLen(URL) + 1);
+	LPWSTR lp = m_bstrPath;
+	while (lp = StrChrW(lp + 1, '\\')) {
+		if (StrCmpN(lp, L"\\script\\", 8) == 0) {
+			CopyMemory(&lp[8], &lp[7], lstrlen(&lp[7]) * sizeof(WCHAR));
+			lp[7] = 's';
+			break;
+		}
+	}
 	return S_OK;
 }
 
@@ -955,8 +963,8 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
 		if (_CreateCoreWebView2EnvironmentWithOptions) {
-			_CreateCoreWebView2EnvironmentWithOptions(NULL, NULL, NULL, this);
 			ShowWindow(hwndParent, SW_SHOWNORMAL);
+			_CreateCoreWebView2EnvironmentWithOptions(NULL, NULL, NULL, this);
 			return S_OK;
 		}
 	}
