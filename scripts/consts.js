@@ -12,91 +12,50 @@ RemoveAsync = function (s) {
 	return s.replace(/([^\.\w])(async |await |debugger;)/g, "$1");
 }
 
+BuildPath = function () {
+	var s = arguments.length ? String(arguments[0]) : "";
+	for (var i = 1; i < arguments.length; ++i) {
+		s = s.replace(/\\+$/, "") + "\\" + arguments[i];
+	}
+	return s.replace(/\//g, "\\");
+};
+
+GetParentFolderName = function (s) {
+	var res = /(.*)([\\\/])/.exec(s);
+	return res ? res[1].length < 3 ? res[1] + res[2] : res[1] : "";
+}
+
 LoadScript = function (js, cb) {
 	var fn;
 	while (fn = js.shift()) {
-		var el = document.createElement("script");
-		el.type = "text/javascript";
-		el.charset = "utf-8";
-		el.src = fn;
-		el.async = false;
-		if (js.length == 0) {
-			el.onload = cb;
-		}
-		document.body.appendChild(el);
-	}
-}
-
-//Objects
-g_uid = location.hash.replace(/\D/g, "");
-
-if (!window.te && ((window.external && external.Type) || window.chrome)) {
-	te = window.chrome ? chrome.webview.hostObjects.te : external;
-	if (te.Type == 0x2ffff) {
-		dialogArguments = te.WB.Data;
-		te = te.TE;
-		try {
-			window.external = te;
-		} catch (e) { }
-	}
-	api = te.WindowsAPI0.CreateObject("api");
-	if (api) {
-		if (!window.dialogArguments && !window.opener) {
-			arg = api.CommandLineToArgv(api.GetCommandLine());
-			if (arg.length > 3 && arg[1].toLowerCase() == '/open') {
-				g_uid = arg[3];
+		if (window.chrome) {
+			var el = document.createElement("script");
+			el.type = "text/javascript";
+			el.charset = "utf-8";
+			el.src = BuildPath(ScriptBase, fn.replace(/script/, "scripts")).replace(/\\/g, "/");
+			el.async = false;
+			if (js.length == 0) {
+				el.onload = cb;
+			}
+			document.body.appendChild(el);
+		} else {
+			var strParent = (GetParentFolderName(api.GetModuleFileName(null))).replace(/\\$/, "");
+			fn = BuildPath(strParent, fn);
+			var ado = api.CreateObject("ads");
+			if (ado) {
+				ado.CharSet = "utf-8";
+				ado.Open();
+				ado.LoadFromFile(fn);
+				var src = RemoveAsync(ado.ReadText());
+				ado.Close();
+				document.write('<script type="text/javascript">\n' + src + '\n</script>');
 			}
 		}
 	}
-}
-fso = api.CreateObject("fso");
-sha = api.CreateObject("sha");
-wsh = api.CreateObject("wsh");
-wnw = api.CreateObject("WScript.Network");
-
-if (g_uid) {
-	(function () {
-		for (var esw = new Enumerator(sha.Windows()); !esw.atEnd(); esw.moveNext()) {
-			var x = esw.item();
-			if (x && x.Document) {
-				var w = x.Document.parentWindow;
-				if (w && w.te && w.Exchange) {
-					var a = w.Exchange[g_uid];
-					if (a) {
-						dialogArguments = a;
-						MainWindow = w;
-						te = w.te;
-						AddEventEx(window, "beforeunload", function () {
-							try {
-								delete MainWindow.Exchange[g_uid];
-							} catch (e) { }
-						});
-						break;
-					}
-				}
-			}
-		}
-	})();
-}
-
-if (!window.MainWindow) {
-	window.MainWindow = window;
-	while (MainWindow.dialogArguments || MainWindow.opener) {
-		MainWindow = MainWindow.dialogArguments || MainWindow.opener;
-		if (MainWindow.MainWindow) {
-			MainWindow = MainWindow.MainWindow;
-		}
+	if (!window.chrome && cb) {
+		cb();
 	}
 }
-ParentWindow = (window.dialogArguments ? dialogArguments.opener : window.opener);
-if (ParentWindow || !window.te) {
-	te = MainWindow.te;
-}
-if (!window.api) {
-	api = te.WindowsAPI;
-}
-
-$ = window.chrome ? api.CreateObject("Object") : window;
 
 //Tablacus
 Ox80000000 = 0x80000000 | 0;
@@ -986,6 +945,8 @@ VT_LPSTR = 30;
 VT_LPWSTR = 31;
 VT_PTR = 26;
 VT_VARIANT = 12;
+VT_RECORD = 36;
+VT_USERDEFINED = 29;
 VT_ARRAY = 0x2000;
 
 FO_MOVE = 1;
@@ -1886,24 +1847,21 @@ STGM_FAILIFTHERE = 0;
 STGM_NOSNAPSHOT = 0x200000;
 STGM_DIRECT_SWMR = 0x400000;
 
-if (!window.chrome) {
+if (!window.chrome || !window.alert) {
+	if (!window.te) {
+		te = external;
+	}
+	api = te.WindowsAPI0.CreateObject("api");
+	fso = api.CreateObject("fso");
+	sha = api.CreateObject("sha");
+	wsh = api.CreateObject("wsh");
+	wnw = api.CreateObject("WScript.Network");
+	WebBrowser = te.Ctrl(CTRL_WB);
 	system32 = api.GetDisplayNameOf(ssfSYSTEM, SHGDN_FORPARSING);
-	hShell32 = api.GetModuleHandle(fso.BuildPath(system32, "shell32.dll"));
+	hShell32 = api.GetModuleHandle(BuildPath(system32, "shell32.dll"));
+	osInfo = api.Memory("OSVERSIONINFOEX");
+	osInfo.dwOSVersionInfoSize = osInfo.Size;
+	api.GetVersionEx(osInfo);
+	WINVER = osInfo.dwMajorVersion * 0x100 + osInfo.dwMinorVersion;
 }
-
-if (window.dialogArguments) {
-	(function () {
-		for (var j in dialogArguments.event) {
-			var res = /^on(.+)/i.exec(j);
-			if (res) {
-				AddEventEx(window, res[1], dialogArguments.event[j]);
-			} else {
-				window[j] = dialogArguments.event[j];
-			}
-		}
-	})();
-}
-if (!window.chrome) {
-	system32 = api.GetDisplayNameOf(ssfSYSTEM, SHGDN_FORPARSING);
-	hShell32 = api.GetModuleHandle(fso.BuildPath(system32, "shell32.dll"));
-}
+$ = window;

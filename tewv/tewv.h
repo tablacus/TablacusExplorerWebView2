@@ -8,7 +8,9 @@
 #include <map>
 #include <unordered_map>
 #include <mshtmdid.h>
+#include <exdispid.h>
 //#include <wrl.h>
+#include <Mshtml.h>
 #include <mshtmhst.h>
 #include <wil/com.h>
 #include "WebView2.h"
@@ -27,6 +29,7 @@
 #define DISPID_TE_COUNT 0x4001ffff
 #define DISPID_TE_INDEX 0x4001fffe
 #define DISPID_TE_MAX TE_VI
+#define MAX_PATHEX				32768
 
 //Tablacus Explorer (Edge)
 const CLSID CLSID_WebBrowserExt             = {0x55bbf1b8, 0x0d30, 0x4908, { 0xbe, 0x0c, 0xd5, 0x76, 0x61, 0x2a, 0x0f, 0x48}};
@@ -50,7 +53,10 @@ typedef HRESULT (WINAPI * LPFNGetAvailableCoreWebView2BrowserVersionString)(PCWS
 class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject, public IServiceProvider,
 	public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
 	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
-	public ICoreWebView2ExecuteScriptCompletedHandler
+	public ICoreWebView2ExecuteScriptCompletedHandler,
+	public ICoreWebView2DocumentTitleChangedEventHandler,
+	public ICoreWebView2NavigationStartingEventHandler,
+	public ICoreWebView2NavigationCompletedEventHandler
 {
 public:
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
@@ -166,6 +172,12 @@ public:
 	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Controller *createdController);
 	//ICoreWebView2ExecuteScriptCompletedHandler
 	STDMETHODIMP Invoke(HRESULT result, LPCWSTR resultObjectAsJson);
+	//ICoreWebView2DocumentTitleChangedEventHandler
+	STDMETHODIMP Invoke(ICoreWebView2* sender, IUnknown* args);
+	//ICoreWebView2NavigationStartingEventHandler
+	STDMETHODIMP Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args);
+	//ICoreWebView2NavigationCompletedEventHandler
+	STDMETHODIMP Invoke(ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args);
 
 	CteBase();
 	~CteBase();
@@ -173,12 +185,16 @@ private:
 	LONG		m_cRef;
 
 	IOleClientSite *m_pOleClientSite;
+	IDispatch *m_pdisp;
 	HWND m_hwndParent;
 	wil::com_ptr<ICoreWebView2Controller> m_webviewController;
 	wil::com_ptr<ICoreWebView2> m_webviewWindow;
+	EventRegistrationToken m_documentTitleChangedToken;
+	EventRegistrationToken m_navigationStartingToken;
+	EventRegistrationToken m_navigationCompletedToken;
 	BSTR m_bstrPath;
 
-//	IDispatch *m_pDispatch;
+	IDispatch	*m_pDocument;
 };
 
 // Class Factory
@@ -275,6 +291,5 @@ public:
 	DISPID		m_dispIdMember;
 private:
 	IDispatch	*m_pDispatch;
-
 	LONG		m_cRef;
 };

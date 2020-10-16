@@ -21,8 +21,8 @@ async function Resize2() {
 		}
 		o.style.height = h + "px";
 	}
-	await ResizeSizeBar("Left", h);
-	await ResizeSizeBar("Right", h);
+	await ResizeSideBar("Left", h);
+	await ResizeSideBar("Right", h);
 	o = document.getElementById("Background");
 	pt = GetPos(o);
 	te.offsetLeft = pt.x;
@@ -34,7 +34,7 @@ async function Resize2() {
 	api.PostMessage(await te.hwnd, WM_SIZE, 0, 0);
 }
 
-async function ResizeSizeBar(z, h) {
+async function ResizeSideBar(z, h) {
 	var o = await g_.Locations;
 	var w = (await o[z + "Bar1"] || await o[z + "Bar2"] || await o[z + "Bar3"]) ? await te.Data["Conf_" + z + "BarWidth"] : 0;
 	o = document.getElementById(z.toLowerCase() + "bar");
@@ -56,18 +56,19 @@ async function ResizeSizeBar(z, h) {
 	var th = Math.round(Math.max(h, 0));
 	o.style.height = th + "px";
 
-	var h2 = o.clientHeight - document.getElementById(z + "Bar1").offsetHeight - document.getElementById(z + "Bar3").offsetHeight;
-	document.getElementById(z + "Bar2").style.height = Math.abs(h2 - o.clientHeight - th) + "px";
+	var h2 = Math.max(o.clientHeight - document.getElementById(z + "Bar1").offsetHeight - document.getElementById(z + "Bar3").offsetHeight, 0);
+	document.getElementById(z + "Bar2").style.height = h2 + "px";
 }
 
-function ResetScroll() {
+function ResetScroll () {
 	if (document.documentElement && document.documentElement.scrollLeft) {
 		document.documentElement.scrollLeft = 0;
 	}
 }
 
+
 function PanelCreated(Ctrl) {
-	UI.RunEvent1("PanelCreated", Ctrl);
+	RunEvent1("PanelCreated", Ctrl);
 }
 
 GetAddonLocation = async function (strName) {
@@ -108,7 +109,7 @@ SetAddon = async function (strName, Location, Tag, strVAlign) {
 			}
 			var res = /<img.*?src=["'](.*?)["']/i.exec(String(Tag));
 			if (res) {
-				strName += "\0" + res[1];
+				strName += "\t" + res[1];
 			}
 			await g_.Locations[Location].push(strName);
 		}
@@ -116,14 +117,12 @@ SetAddon = async function (strName, Location, Tag, strVAlign) {
 	return Location;
 }
 
-UI.Resize = function () {
+Resize = UI.Resize = function () {
 	if (!ui_.tidResize) {
 		clearTimeout(ui_.tidResize);
 	}
 	ui_.tidResize = setTimeout(Resize2, 500);
 }
-
-Resize = UI.Resize;
 
 UI.OpenInExplorer = function (Path) {
 	setTimeout(async function (Path) {
@@ -184,7 +183,7 @@ UI.SelectNewItem = function () {
 	setTimeout(async function () {
 		var FV = te.Ctrl(CTRL_FV);
 		if (FV) {
-			if (!await api.StrCmpI(await FV.FolderItem.Path, await fso.GetParentFolderName(await g_.NewItemPath))) {
+			if (SameText(await FV.FolderItem.Path, GetParentFolderName(await g_.NewItemPath))) {
 				FV.SelectItem(await g_.NewItemPath, SVSI_FOCUSED | SVSI_ENSUREVISIBLE | SVSI_DESELECTOTHERS | SVSI_SELECTIONMARK | SVSI_SELECT);
 			}
 		}
@@ -235,13 +234,15 @@ UI.ExecGesture = function (Ctrl, hwnd, pt, str) {
 }
 
 UI.InitWindow = function (cb, cb2) {
-	setTimeout(async function (cb) {
-		Resize();
-		(await cb)(cb);
-		setTimeout(async function (cb2) {
+	setTimeout(async function () {
+		await Resize();
+		(await cb)();
+		setTimeout(async function () {
+			await ApplyLang(document);
+			await Resize();
 			(await cb2)();
-		}, 500, cb2);
-	}, 99, cb);
+		}, 500);
+	}, 99);
 }
 
 UI.ExitFullscreen = function () {
@@ -249,6 +250,8 @@ UI.ExitFullscreen = function () {
 		document.msExitFullscreen();
 	}
 }
+
+importJScript = $.importScript;
 
 te.OnArrange = async function (Ctrl, rc, cb) {
 	var Type = await Ctrl.Type;
@@ -260,18 +263,15 @@ te.OnArrange = async function (Ctrl, rc, cb) {
 		var Id = await Ctrl.Id;
 		var o = ui_.Panels[Id];
 		if (!o) {
-			o = document.createElement("table");
-			o.id = "Panel_" + Id;
-			o.className = "layout";
-			o.style.position = "absolute";
-			o.style.zIndex = 1;
-			var s = '<tr><td id="InnerLeft_$" class="sidebar" style="width: 0; display: none; overflow: auto"></td><td style="width: 100%"><div id="InnerTop_$" style="display: none"></div>';
-			s += '<table id="InnerTop2_$" class="layout"><tr><td id="Inner1Left_$" class="toolbar1"></td><td id="Inner1Center_$" class="toolbar2" style="white-space: nowrap"></td><td id="Inner1Right_$" class="toolbar3"></td></tr></table>';
-			s += '<table id="InnerView_$" class="layout" style="width: 100%"><tr><td id="Inner2Left_$" style="width: 0"></td><td id="Inner2Center_$"></td><td id="Inner2Right_$" style="width: 0; overflow: auto"></td></tr></table>';
-			s += '<div id="InnerBottom_$"></div></td><td id="InnerRight_$" class="sidebar" style="width: 0; display: none"></td></tr>';
-			o.innerHTML = s.replace(/\$/g, Id);
-			document.getElementById("Panel").appendChild(o);
+			var s = ['<table id="Panel_$" class="layout" style="position: absolute; z-index: 1;">'];
+			s.push('<tr><td id="InnerLeft_$" class="sidebar" style="width: 0; display: none; overflow: auto"></td><td style="width: 100%"><div id="InnerTop_$" style="display: none"></div>');
+			s.push('<table id="InnerTop2_$" class="layout">');
+			s.push('<tr><td id="Inner1Left_$" class="toolbar1"></td><td id="Inner1Center_$" class="toolbar2" style="white-space: nowrap"></td><td id="Inner1Right_$" class="toolbar3"></td></tr></table>');
+			s.push('<table id="InnerView_$" class="layout" style="width: 100%"><tr><td id="Inner2Left_$" style="width: 0"></td><td id="Inner2Center_$"></td><td id="Inner2Right_$" style="width: 0; overflow: auto"></td></tr></table>');
+			s.push('<div id="InnerBottom_$"></div></td><td id="InnerRight_$" class="sidebar" style="width: 0; display: none"></td></tr></table>');
+			document.getElementById("Panel").insertAdjacentHTML("BeforeEnd", s.join("").replace(/\$/g, Id));
 			PanelCreated(await Ctrl);
+			o = document.getElementById("Panel_" + Id);
 			ui_.Panels[Id] = o;
 			ApplyLang(o);
 			ChangeView(await Ctrl.Selected);
@@ -316,9 +316,10 @@ g_.event.windowregistered = function (Ctrl) {
 	ui_.bWindowRegistered = true;
 }
 
+
 ArrangeAddons = async function () {
 	g_.Locations = await api.CreateObject("Object");
-	$.IconSize = await te.Data.Conf_IconSize || screen.logicalYDPI / 4;
+	$.IconSize = await te.Data.Conf_IconSize || screen.deviceYDPI / 4;
 	var xml = await OpenXml("addons.xml", false, true);
 	te.Data.Addons = xml;
 	if (await api.GetKeyState(VK_SHIFT) < 0 && await api.GetKeyState(VK_CONTROL) < 0) {
@@ -340,7 +341,7 @@ ArrangeAddons = async function () {
 				if (!AddonId[Id]) {
 					var Enabled = GetNum(await item.getAttribute("Enabled"));
 					if (Enabled & 6) {
-						LoadLang2(await fso.BuildPath(await te.Data.Installed, "addons\\" + Id + "\\lang\\" + await GetLangId() + ".xml"));
+						LoadLang2(BuildPath(await te.Data.Installed, "addons", Id, "lang", await GetLangId() + ".xml"));
 					}
 					if (Enabled & 8) {
 						LoadAddon("vbs", Id, arError);
@@ -362,7 +363,8 @@ ArrangeAddons = async function () {
 			}
 		}
 	}
-	UI.RunEvent1("BrowserCreated", document);
+	RunEventUI("BrowserCreatedEx");
+	await RunEvent1("BrowserCreated", document);
 	var cl = GetWinColor(window.getComputedStyle ? getComputedStyle(document.body).getPropertyValue('background-color') : document.body.currentStyle.backgroundColor);
 	ArrangeAddons1(cl);
 }
@@ -399,9 +401,9 @@ AddEvent("SystemMessage", async function (Ctrl, hwnd, msg, wParam, lParam) {
 
 // Browser Events
 
-AddEventEx(window, "load", async function () {
+AddEventEx(window, "load", function () {
 	ApplyLang(document);
-	if (await api.GetKeyState(VK_SHIFT) < 0 && await api.GetKeyState(VK_CONTROL) < 0) {
+	if (api.GetKeyState(VK_SHIFT) < 0 && api.GetKeyState(VK_CONTROL) < 0) {
 		ShowOptions("Tab=Add-ons");
 	}
 });
@@ -415,7 +417,7 @@ AddEventEx(window, "blur", ResetScroll);
 AddEventEx(document, "MSFullscreenChange", function () {
 	FullscreenChanged(document.msFullscreenElement != void 0);
 });
-	
+
 (async function () {
 	UI.OnLoad();
 	await InitCode();

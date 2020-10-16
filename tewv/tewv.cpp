@@ -14,6 +14,14 @@ HMODULE		g_hWebView2Loader = NULL;
 LONG		g_lLocks = 0;
 LPFNCreateCoreWebView2EnvironmentWithOptions _CreateCoreWebView2EnvironmentWithOptions = NULL;
 
+std::unordered_map<std::wstring, DISPID> g_umSW = {
+	{ L"name", TE_PROPERTY + 1 },
+	{ L"fullname", TE_PROPERTY + 2 },
+	{ L"path", TE_PROPERTY + 3 },
+	{ L"visible", TE_PROPERTY + 4 },
+	{ L"document", TE_PROPERTY + 5 },
+};
+
 std::unordered_map<std::wstring, DISPID> g_umArray = {
 	{ L"Item", DISPID_TE_ITEM },
 	{ L"Count", DISPID_TE_COUNT },
@@ -98,38 +106,6 @@ int GetIntFromVariantClear(VARIANT *pv)
 	VariantClear(pv);
 	return i;
 }
-
-#ifdef _WIN64
-LONGLONG GetLLFromVariant(VARIANT *pv)
-{
-	if (pv) {
-		if (pv->vt == (VT_VARIANT | VT_BYREF)) {
-			return GetLLFromVariant(pv->pvarVal);
-		}
-		if (pv->vt == VT_I4) {
-			return pv->lVal;
-		}
-		if (pv->vt == VT_R8) {
-			return (LONGLONG)pv->dblVal;
-		}
-		if (pv->vt == (VT_ARRAY | VT_I4)) {
-			LONGLONG ll = 0;
-			PVOID pvData;
-			if (::SafeArrayAccessData(pv->parray, &pvData) == S_OK) {
-				::CopyMemory(&ll, pvData, sizeof(LONGLONG));
-				::SafeArrayUnaccessData(pv->parray);
-				return ll;
-			}
-		}
-		VARIANT vo;
-		VariantInit(&vo);
-		if SUCCEEDED(VariantChangeType(&vo, pv, 0, VT_I8)) {
-			return vo.llVal;
-		}
-	}
-	return 0;
-}
-#endif
 
 VOID teSetBool(VARIANT *pv, BOOL b)
 {
@@ -248,7 +224,6 @@ VOID teSetBSTR(VARIANT *pv, BSTR bs, int nLen)
 		teSysFreeString(&bs);
 	}
 }
-
 
 HRESULT teGetDispIdNum(LPOLESTR lpszName, int nMax, DISPID *pid)
 {
@@ -373,17 +348,6 @@ BOOL GetDispatch(VARIANT *pv, IDispatch **ppdisp)
 	return FALSE;
 }
 
-HRESULT teGetProperty(IDispatch *pdisp, LPOLESTR sz, VARIANT *pv)
-{
-/*	DISPID dispid;
-	HRESULT hr = pdisp->GetIDsOfNames(IID_NULL, &sz, 1, LOCALE_USER_DEFAULT, &dispid);
-	if (hr == S_OK) {
-		hr = Invoke5(pdisp, dispid, DISPATCH_PROPERTYGET, pv, 0, NULL);
-	}
-	return hr;*/
-	return E_NOTIMPL;
-}
-
 VOID teVariantChangeType(__out VARIANTARG * pvargDest,
 	__in const VARIANTARG * pvarSrc, __in VARTYPE vt)
 {
@@ -464,15 +428,18 @@ CteBase::CteBase()
 {
 	m_cRef = 1;
 	m_pOleClientSite = NULL;
+	m_pdisp = NULL;
 	m_bstrPath = NULL;
+	m_pDocument = NULL;
+
 }
 
 CteBase::~CteBase()
 {
 	teSysFreeString(&m_bstrPath);
 	SafeRelease(&m_pOleClientSite);
-	
-//	SafeRelease(&m_pDispatch);
+	SafeRelease(&m_pdisp);
+	SafeRelease(&m_pDocument);
 }
 
 STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
@@ -489,6 +456,8 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, IServiceProvider),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler),
+		QITABENT(CteBase, ICoreWebView2DocumentTitleChangedEventHandler),
+		QITABENT(CteBase, ICoreWebView2NavigationCompletedEventHandler),
 		{ 0 },
 	};
 	return QISearch(this, qit, riid, ppvObject);
@@ -521,30 +490,66 @@ STDMETHODIMP CteBase::GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo)
 
 STDMETHODIMP CteBase::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-
+	BSTR bs = ::SysAllocString(*rgszNames);
+	for (int i = ::SysStringLen(bs); i-- > 0;) {
+		bs[i] = tolower(bs[i]);
+	}
+	auto itr = g_umSW.find(bs);
+	::SysFreeString(bs);
+	if (itr != g_umSW.end()) {
+		*rgDispId = itr->second;
+		return S_OK;
+	}
 	OutputDebugStringA("GetIDsOfNames:");
 	OutputDebugString(rgszNames[0]);
 	OutputDebugStringA("\n");
-	return E_NOTIMPL;
-//	return m_pDispatch->GetIDsOfNames(riid, rgszNames, cNames, lcid, rgDispId);
+	return DISP_E_UNKNOWNNAME;
 }
 
 STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-//	return m_pDispatch->Invoke(dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 	int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
 	HRESULT hr = S_OK;
 	try {
 		switch (dispIdMember) {
 
-		case 0x60010000://Init
+		case TE_PROPERTY + 1://name
+			if (pVarResult) {
+				get_Name(&pVarResult->bstrVal);
+				pVarResult->vt = VT_BSTR;
+			}
 			return S_OK;
 
-		case 0x60010001://Finalize
+		case TE_PROPERTY + 2://fullname
+			if (pVarResult) {
+				get_FullName(&pVarResult->bstrVal);
+				pVarResult->vt = VT_BSTR;
+			}
 			return S_OK;
 
-		//this
-		case DISPID_VALUE:
+		case TE_PROPERTY + 3://path
+			if (pVarResult) {
+				get_Path(&pVarResult->bstrVal);
+				pVarResult->vt = VT_BSTR;
+			}
+			return S_OK;
+	
+		case TE_PROPERTY + 4://visible
+			if (pVarResult) {
+				get_Visible(&pVarResult->boolVal);
+				pVarResult->vt = VT_BOOL;
+			}
+			return S_OK;
+
+		case TE_PROPERTY + 5://document
+			if (pVarResult) {
+				if SUCCEEDED(get_Document(&pVarResult->pdispVal)) {
+					pVarResult->vt = VT_DISPATCH;
+				}
+			}
+			return S_OK;
+
+		case DISPID_VALUE://this
 			teSetObject(pVarResult, this);
 			return S_OK;
 		}//end_switch
@@ -578,13 +583,14 @@ STDMETHODIMP CteBase::GoSearch(void)
 
 STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameName, VARIANT *PostData, VARIANT *Headers)
 {
-	if (m_webviewWindow) {
-		return E_NOTIMPL;
-		return m_webviewWindow->Navigate(URL);
-	} 
-	teSysFreeString(&m_bstrPath);
-	m_bstrPath = ::SysAllocStringLen(URL, ::SysStringLen(URL) + 1);
-	LPWSTR lp = m_bstrPath;
+	if (GetIntFromVariant(Flags) == 1) {
+		if (m_webviewWindow) {
+			return m_webviewWindow->NavigateToString(URL);
+		}
+		return E_FAIL;
+	}
+	BSTR bstrPath = ::SysAllocStringLen(URL, ::SysStringLen(URL) + 1);
+	LPWSTR lp = bstrPath;
 	while (lp = StrChrW(lp + 1, '\\')) {
 		if (StrCmpN(lp, L"\\script\\", 8) == 0) {
 			CopyMemory(&lp[8], &lp[7], lstrlen(&lp[7]) * sizeof(WCHAR));
@@ -592,22 +598,36 @@ STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameNam
 			break;
 		}
 	}
+	if (m_webviewWindow) {
+		HRESULT hr = m_webviewWindow->Navigate(bstrPath);
+		::SysFreeString(bstrPath);
+		return hr;
+	} 
+	teSysFreeString(&m_bstrPath);
+	m_bstrPath = bstrPath;
 	return S_OK;
 }
 
 STDMETHODIMP CteBase::Refresh(void)
 {
+	if (m_webviewWindow) {
+		m_webviewWindow->ExecuteScript(L"location.reload();", this);
+		return S_OK;
+	}
 	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::Refresh2(VARIANT *Level)
 {
-	return E_NOTIMPL;
+	return Refresh();
 }
 
 STDMETHODIMP CteBase::Stop(void)
 {
-	return m_webviewWindow->Stop();
+	if (m_webviewWindow) {
+		return m_webviewWindow->Stop();
+	}
+	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::get_Application(IDispatch **ppDisp)
@@ -627,7 +647,10 @@ STDMETHODIMP CteBase::get_Container(IDispatch **ppDisp)
 
 STDMETHODIMP CteBase::get_Document(IDispatch **ppDisp)
 {
-	return E_NOTIMPL;
+	if (m_pDocument) {
+		return m_pDocument->QueryInterface(IID_PPV_ARGS(ppDisp));
+	}
+	return E_NOINTERFACE;
 }
 
 STDMETHODIMP CteBase::get_TopLevelContainer(VARIANT_BOOL *pBool)
@@ -647,7 +670,7 @@ STDMETHODIMP CteBase::get_Left(long *pl)
 
 STDMETHODIMP CteBase::put_Left(long Left)
 {
-	return E_NOTIMPL;
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Top(long *pl)
@@ -657,7 +680,10 @@ STDMETHODIMP CteBase::get_Top(long *pl)
 
 STDMETHODIMP CteBase::put_Top(long Top)
 {
-	return E_NOTIMPL;
+	if (m_webviewController) {
+		m_webviewController->NotifyParentWindowPositionChanged();
+	}
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Width(long *pl)
@@ -717,7 +743,14 @@ STDMETHODIMP CteBase::ClientToWindow(int *pcx, int *pcy)
 
 STDMETHODIMP CteBase::PutProperty(BSTR Property, VARIANT vtValue)
 {
-	return m_webviewWindow->AddHostObjectToScript(Property, &vtValue);
+	if (lstrcmpi(Property, L"document") == 0) {
+		SafeRelease(&m_pDocument);
+		GetDispatch(&vtValue, &m_pDocument);
+		return S_OK;
+	}
+
+	return S_OK;
+//	return m_webviewWindow->AddHostObjectToScript(Property, &vtValue);
 }
 
 STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
@@ -729,42 +762,56 @@ STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
 {
-	return E_NOTIMPL;
+	*Name = ::SysAllocString(L"WebView2");
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_HWND(SHANDLE_PTR *pHWND)
 {
 	HWND hwnd;
-	HRESULT hr = m_webviewController->get_ParentWindow(&hwnd);
+	HRESULT hr = GetWindow(&hwnd);
 	*pHWND = (HANDLE_PTR)hwnd;
 	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_FullName(BSTR *FullName)
 {
-	WCHAR pszFullName[MAX_PATH];
-	GetModuleFileName(NULL, pszFullName, MAX_PATH);
-	*FullName = ::SysAllocString(pszFullName);
+	WCHAR pszPath[MAX_PATH];
+	GetModuleFileName(NULL, pszPath, MAX_PATH);
+	*FullName = ::SysAllocString(pszPath);
 	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Path(BSTR *Path)
 {
-	*Path = ::SysAllocString(m_bstrPath);
+	WCHAR pszPath[MAX_PATH];
+	GetModuleFileName(NULL, pszPath, MAX_PATH);
+	LPWSTR lp = PathFindFileName(pszPath);
+	if (lp) {
+		lp[0] = NULL;
+	}
+	*Path = ::SysAllocString(pszPath);
 	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_Visible(VARIANT_BOOL *pBool)
 {
+	HRESULT hr = E_FAIL;
 	BOOL bVisible;
-	HRESULT hr = m_webviewController->get_IsVisible(&bVisible);
-	*pBool = bVisible ? VARIANT_TRUE : VARIANT_FALSE;
+	if (m_webviewController) {
+		hr = m_webviewController->get_IsVisible(&bVisible);
+		*pBool = bVisible ? VARIANT_TRUE : VARIANT_FALSE;
+	}
 	return hr;
 }
 
 STDMETHODIMP CteBase::put_Visible(VARIANT_BOOL Value)
 {
-	return m_webviewController ? m_webviewController->put_IsVisible(Value) : S_OK;
+	HRESULT hr = E_FAIL;
+	if (m_webviewController) {
+		hr = m_webviewController->put_IsVisible(Value);
+	}
+	return hr;
 }
 
 STDMETHODIMP CteBase::get_StatusBar(VARIANT_BOOL *pBool)
@@ -917,8 +964,10 @@ STDMETHODIMP CteBase::put_Resizable(VARIANT_BOOL Value)
 STDMETHODIMP CteBase::SetClientSite(IOleClientSite *pClientSite)
 {
 	SafeRelease(&m_pOleClientSite);
+	SafeRelease(&m_pdisp);
 	if (pClientSite) {
 		pClientSite->QueryInterface(IID_PPV_ARGS(&m_pOleClientSite));
+		pClientSite->QueryInterface(IID_PPV_ARGS(&m_pdisp));
 	}
 	return S_OK;
 }
@@ -963,8 +1012,8 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
 		if (_CreateCoreWebView2EnvironmentWithOptions) {
-			ShowWindow(hwndParent, SW_SHOWNORMAL);
 			_CreateCoreWebView2EnvironmentWithOptions(NULL, NULL, NULL, this);
+			//ShowWindow(hwndParent, SW_SHOWNORMAL);
 			return S_OK;
 		}
 	}
@@ -1034,10 +1083,28 @@ STDMETHODIMP CteBase::SetColorScheme(LOGPALETTE *pLogpal)
 //IOleWindow
 STDMETHODIMP CteBase::GetWindow(HWND *phwnd)
 {
+	HRESULT hr = E_FAIL;
 	if (m_webviewController) {
-		return m_webviewController->get_ParentWindow(phwnd);
+		HWND hwnd1, hwnd = NULL;
+		hr = m_webviewController->get_ParentWindow(&hwnd1);
+		if (hr == S_OK) {
+			hwnd = hwnd1;
+			hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_WidgetWin_0", NULL);
+			if (hwnd1) {
+				hwnd = hwnd1;
+				hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_WidgetWin_1", NULL);
+				if (hwnd1) {
+					hwnd = hwnd1;
+/*					hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_RenderWidgetHostHWND", NULL);
+					if (hwnd1) {
+						hwnd = hwnd1;
+					}*/
+				}
+			}
+		}
+		*phwnd = hwnd;
 	}
-	return E_FAIL;
+	return hr;
 }
 
 STDMETHODIMP CteBase::ContextSensitiveHelp(BOOL fEnterMode)
@@ -1058,12 +1125,29 @@ STDMETHODIMP CteBase::UIDeactivate(void)
 
 STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 {
-	return m_webviewController->put_Bounds(*lprcClipRect);
+	RECT bounds;
+	if (!lprcPosRect) {
+		GetClientRect(m_hwndParent, &bounds);
+		lprcClipRect = &bounds;
+	}
+	HDC hdc = GetDC(m_hwndParent);
+	int deviceYDPI = GetDeviceCaps(hdc, LOGPIXELSY);
+	ReleaseDC(m_hwndParent, hdc);
+	m_webviewController->SetBoundsAndZoomFactor(*lprcClipRect, 96.0 / deviceYDPI);
+	if (m_webviewWindow) {
+		wchar_t pszCmd[MAX_PATH];
+		swprintf_s(pszCmd, MAX_PATH, L"deviceYDPI = %d;", deviceYDPI);
+		m_webviewWindow->ExecuteScript(pszCmd, this);
+	}
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::ReactivateAndUndo(void)
 {
-	return E_NOTIMPL;
+	if (m_webviewController) {
+		m_webviewController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+	}
+	return S_OK;
 }
 
 //IServiceProvider
@@ -1104,16 +1188,19 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 			if SUCCEEDED(pDocHostUIHandler->GetExternal(&v.pdispVal)) {
 				v.vt = VT_DISPATCH;
 				m_webviewWindow->AddHostObjectToScript(L"te", &v);
+				VariantClear(&v);
 			}
 			pDocHostUIHandler->Release();
 		}
+		m_webviewWindow->add_DocumentTitleChanged(this, &m_documentTitleChangedToken);
+		m_webviewWindow->add_NavigationStarting(this, &m_navigationStartingToken);
+		m_webviewWindow->add_NavigationCompleted(this, &m_navigationCompletedToken);
 	}
-	RECT bounds;
-	GetClientRect(m_hwndParent, &bounds);
-	m_webviewController->put_Bounds(bounds);
+	SetObjectRects(NULL, NULL);
 	if (m_bstrPath) {
 		m_webviewWindow->Navigate(m_bstrPath);
 	}
+	m_webviewController->put_IsVisible(TRUE);
 	return S_OK;
 }
 
@@ -1123,7 +1210,52 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, LPCWSTR resultObjectAsJson)
 	return S_OK;
 }
 
+//ICoreWebView2DocumentTitleChangedEventHandler
+STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, IUnknown* args) {
+	if (!m_pdisp) {
+		return E_NOTIMPL;
+	}
+	wil::unique_cotaskmem_string title;
+	if (sender->get_DocumentTitle(&title) == S_OK) {
+		VARIANT v;
+		v.bstrVal = ::SysAllocString(title.get());
+		v.vt = VT_BSTR;
+		Invoke5(m_pdisp, DISPID_TITLECHANGE, DISPATCH_METHOD, NULL, -1, &v);
+		VariantClear(&v);
+	}
+	return S_OK;
+}
 
+//ICoreWebView2DocumentTitleChangedEventHandler
+STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) {
+	VARIANTARG *pv = GetNewVARIANT(7);
+	VARIANT_BOOL bCancel = VARIANT_FALSE;
+	teSetObject(&pv[6], this);
+	LPWSTR lpPath;
+	if SUCCEEDED(args->get_Uri(&lpPath)) {
+		pv[5].bstrVal = ::SysAllocString(lpPath);
+		pv[5].vt = VT_BSTR;
+		CoTaskMemFree(lpPath);
+
+	}
+	pv[0].vt = VT_BYREF | VT_BOOL;
+	pv[0].pboolVal = &bCancel;
+	Invoke5(m_pdisp, DISPID_BEFORENAVIGATE2, DISPATCH_METHOD, NULL, 7, pv);
+	if (bCancel) {
+		args->put_Cancel(true);
+	}
+	return S_OK;
+}
+
+//ICoreWebView2NavigationCompletedEventHandler
+STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args)
+{
+	if (m_webviewController) {
+		m_webviewController->NotifyParentWindowPositionChanged();
+	}
+	SetObjectRects(NULL, NULL);
+	return Invoke5(m_pdisp, DISPID_DOCUMENTCOMPLETE, DISPATCH_METHOD, NULL, 0, NULL);
+}
 // CteClassFactory
 
 STDMETHODIMP CteClassFactory::QueryInterface(REFIID riid, void **ppvObject)

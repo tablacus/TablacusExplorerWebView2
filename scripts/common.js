@@ -1,72 +1,46 @@
 // Tablacus Explorer
-
-(async function () {
-	system32 = await api.GetDisplayNameOf(ssfSYSTEM, SHGDN_FORPARSING);
-	hShell32 = await api.GetModuleHandle(fso.BuildPath(system32, "shell32.dll"));
-
-	osInfo = await api.Memory("OSVERSIONINFOEX");
-	osInfo.dwOSVersionInfoSize = await osInfo.Size;
-	await api.GetVersionEx(osInfo);
-	WINVER = await osInfo.dwMajorVersion * 0x100 + await osInfo.dwMinorVersion;
-
-	if (WINVER > 0x603) {
-		BUTTONS = {
-			opened: '<b style="font-family: Consolas; transform: scale(1.2,1) rotate(-90deg)">&lt;</b>',
-			closed: '<b style="font-family: Consolas; transform: scale(1,1.2) translateX(1px); opacity: 0.6">&gt;</b>',
-			parent: '&laquo;',
-			next: '<b style="font-family: Consolas; opacity: 0.6; transform: scale(0.75,0.9); text-shadow: 1px 0">&gt;</b>',
-			dropdown: '<b style="font-family: Consolas; transform: scale(1.2,1) rotate(-90deg) translateX(2px); opacity: 0.6; width: 1em; display: inline-block">&lt;</b>'
-		};
-	} else {
-		try {
-			var s = await wsh.regRead("HKCU\\Software\\Microsoft\\Internet Explorer\\Settings\\Always Use My Font Face");
-		} catch (e) {
-			s = 0;
-		}
-		BUTTONS = {
-			opened: '<span style="font-size: 10pt; transform: translateY(-2pt)">&#x25e2;</span>',
-			closed: '<span style="font-size: 10pt; transform: scale(1,1.4)">&#x25b7;</span>',
-			parent: '&laquo;',
-			next: s ? '&#x25ba;' : '<span style="font-family: Marlett">4</span>',
-			dropdown: s ? '&#x25bc;' : '<span style="font-family: Marlett">6</span>'
-		};
-		delete s;
-	}
-
-	if (await api.SHTestTokenMembership(null, 0x220) && WINVER >= 0x600) {
-		TITLE += ' [' + (await api.LoadString(hShell32, 25167) || "Admin").replace(/;.*$/, "") + ']';
-	}
-})();
+g_sep = "` ~";
 
 importScript = async function (fn) {
 	var hr = E_FAIL;
-	var ado;
-	if (window.OpenAdodbFromTextFile) {
-		ado = await OpenAdodbFromTextFile(fn, "utf-8");
+	var s;
+	if (window.ReadTextFile) {
+		s = await ReadTextFile(fn);
 	} else {
 		if (!/^[A-Z]:\\|^\\\\\w/i.test(fn)) {
-			fn = await fso.BuildPath(await te.Data.Installed, fn);
+			fn = BuildPath(GetParentFolderName(await api.GetModuleFileName(null)), fn);
 		}
 		var ado = await api.CreateObject("ads");
 		ado.CharSet = "utf-8";
 		await ado.Open();
 		await ado.LoadFromFile(fn);
+		s = await ado.ReadText();
+		ado.Close();
 	}
-	if (ado) {
-		if (/\.vbs/i.test(fn)) {
-			hr = ExecScriptEx(await window.Ctrl, await ado.ReadText(), "VBScript", await $.pt, await $.dataObj, await $.grfKeyState, await $.pdwEffect, await $.bDrop);
+	if (s) {
+		if (/\.vbs$/i.test(fn)) {
+			hr = ExecScriptEx(await window.Ctrl, s, "VBScript", await $.pt, await $.dataObj, await $.grfKeyState, await $.pdwEffect, await $.bDrop);
 		} else {
-			new Function(await ado.ReadText())();
+			if (window.chrome && window.alert) {
+				s = "(async () => {" + s + "\n})();";
+			} else {
+				s = RemoveAsync(s);
+			}
+			new Function(s)();
 			hr = S_OK;
 		}
-		ado.Close();
 	}
 	return hr;
 }
 
 if (!window.UI && !window.chrome) {
-	importScript("script\\sync.js");
-	importScript("script\\ui.js");
+	if (window.alert) {
+		importScript("script\\ui.js");
+		InitUI();
+	}
+	if (!window.g_) {
+		importScript("script\\sync.js");
+	}
 }
 
 GetNum = function (s) {
@@ -77,8 +51,13 @@ SameText = function (s1, s2) {
 	return String(s1).toLowerCase() == String(s2).toLowerCase();
 }
 
-GetLength = function (o) {
-	return o.length || api.ObjGetI(o, "length");
+GetLength = async function (o) {
+	return o ? (o.length || await api.ObjGetI(o, "length")) : 0;
+}
+
+GetFileName = function (s) {
+	var res = /([^\\\/]*)$/.exec(s);
+	return res ? res[1] : "";
 }
 
 StripAmp = function (s) {
@@ -103,6 +82,10 @@ DecodeSC = function (s) {
 		}
 		return { quot: '"', amp: '&', lt: '<', gt: '>' }[ref.toLowerCase()] || '&' + ref + ';';
 	});
+}
+
+GetIconSize = function (h, a) {
+	return h || a * (window.deviceYDPI || screen.deviceYDPI) / 96 || window.IconSize;
 }
 
 GetGestureX = async function (ar) {
@@ -164,7 +147,11 @@ GetWinColor = async function (c) {
 }
 
 FindText = async function () {
-	await api.OleCmdExec(document, null, 32, 0, 0);
+	if (window.chrome) {
+		wsh.SendKeys("^f");
+	} else {
+		api.OleCmdExec(document, null, 32, 0, 0);
+	}
 }
 
 SetRenameMenu = function () { }
@@ -190,42 +177,6 @@ GetConsts = function (s) {
 	return s;
 }
 
-createHttpRequest = function () {
-	try {
-		return window.XMLHttpRequest && ui_.IEVer >= 9 ? new XMLHttpRequest() : api.CreateObject("Msxml2.XMLHTTP");
-	} catch (e) {
-		return api.CreateObject("Microsoft.XMLHTTP");
-	}
-}
-
-OpenHttpRequest = function (url, alt, fn, arg) {
-	var xhr = createHttpRequest();
-	xhr.onreadystatechange = function () {
-		if (xhr.readyState == 4) {
-			if (arg && arg.pcRef) {
-				--arg.pcRef[0];
-			}
-			if (xhr.status == 200) {
-				return fn(xhr, url, arg);
-			}
-			if (/^http/.test(alt)) {
-				return OpenHttpRequest(/^https/.test(url) && alt == "http" ? url.replace(/^https/, alt) : alt, '', fn, arg);
-			}
-			MessageBox([api.sprintf(999, api.LoadString(hShell32, 4227).replace(/^\t/, ""), xhr.status), url].join("\n\n"), TITLE, MB_OK | MB_ICONSTOP);
-		}
-	}
-	if (/ml$/i.test(url)) {
-		url += "?" + Math.floor(new Date().getTime() / 60000);
-	}
-	if (arg && arg.pcRef) {
-		++arg.pcRef[0];
-	}
-	xhr.open("GET", url, false);
-	try {
-		xhr.send(null);
-	} catch (e) { }
-}
-
 InputDialog = async function (text, defaultText) {
 	return await prompt(await GetTextR(text), defaultText);
 }
@@ -248,4 +199,23 @@ CalcVersion = function (s) {
 		r += 2000 * 10000;
 	}
 	return r;
+}
+
+LoadImgDll = async function (icon, index) {
+	var i4 = (index || 0) * 4;
+	api.OutputDebugString([i4, system32, icon[i4]].join(",") + "\n");
+	var hModule = await api.LoadLibraryEx(BuildPath(system32, icon[i4]), 0, LOAD_LIBRARY_AS_DATAFILE);
+	if (!hModule && SameText(icon[i4], "ieframe.dll")) {
+		if (icon[i4 + 1] >= 500) {
+			hModule = await api.LoadLibraryEx(BuildPath(system32, "browseui.dll"), 0, LOAD_LIBRARY_AS_DATAFILE);
+		} else {
+			hModule = await api.LoadLibraryEx(BuildPath(system32, "shell32.dll"), 0, LOAD_LIBRARY_AS_DATAFILE);
+		}
+	}
+	return hModule;
+}
+
+amp2ul = function (s) {
+	s = s.replace(/&amp;/ig, "&");
+	return /;/.test(s) ? s : s.replace(/&(.)/ig, "<u>$1</u>");
 }
