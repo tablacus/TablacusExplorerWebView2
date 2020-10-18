@@ -9,6 +9,10 @@ if (window.UI) {
 		api.Invoke(UI.clearTimeout, tid);
 	}
 
+	InputDialog = function () {
+		api.Invoke(UI.InputDialog, arguments);
+	} 
+
 	OpenHttpRequest = function () {
 		api.Invoke(UI.OpenHttpRequest, arguments);
 	}

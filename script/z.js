@@ -34,15 +34,27 @@ function WriteFile(fn, s) {
 	ado.Close();
 	return true;
 }
-var ar = ["consts.js", "index.js", "ui.js", "common.js", "options.js"];
-ar.push("index.html", "options.html", "dialog.html");
-for (var i in ar) {
-	var fn = ar[i];
-	var src = ReadFile(fn);
-	if (/\.js$/.test(fn)) {
+for (;;) {
+	var ar = ["index.js", "ui.js", "common.js", "options.js"];
+	for (var i in ar) {
+		var fn = ar[i];
+		//WScript.Echo(fn);
+		var src = ReadFile('..\\script\\' + fn);
 		src = src.replace(/([^\.\w])(async |await |debugger;)/g, "$1");
+		if (WriteFile(fn, src)) {
+			WScript.Echo(new Date().toLocaleString());
+			WScript.Echo(fn);
+		}
 	}
-	if (WriteFile('..\\script\\' + fn, src)) {
-		WScript.Echo(fn);
-	}
+/*	var ar= ["consts.js", "index.html", "options.html", "dialog.html", "location.html", "index.css", "options.css"];
+	for (var i in ar) {
+		var fn = ar[i];
+		//WScript.Echo(fn);
+		var src = ReadFile(fn);
+		if (WriteFile('..\\script\\' + fn, src)) {
+			WScript.Echo(new Date().toLocaleString());
+			WScript.Echo(fn);
+		}
+	}*/
+	WScript.Sleep(3000);
 }

@@ -589,22 +589,11 @@ STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameNam
 		}
 		return E_FAIL;
 	}
-	BSTR bstrPath = ::SysAllocStringLen(URL, ::SysStringLen(URL) + 1);
-	LPWSTR lp = bstrPath;
-	while (lp = StrChrW(lp + 1, '\\')) {
-		if (StrCmpN(lp, L"\\script\\", 8) == 0) {
-			CopyMemory(&lp[8], &lp[7], lstrlen(&lp[7]) * sizeof(WCHAR));
-			lp[7] = 's';
-			break;
-		}
-	}
-	if (m_webviewWindow) {
-		HRESULT hr = m_webviewWindow->Navigate(bstrPath);
-		::SysFreeString(bstrPath);
-		return hr;
-	} 
 	teSysFreeString(&m_bstrPath);
-	m_bstrPath = bstrPath;
+	m_bstrPath = ::SysAllocString(URL);
+	if (m_webviewWindow) {
+		return m_webviewWindow->Navigate(URL);
+	}
 	return S_OK;
 }
 
@@ -614,7 +603,7 @@ STDMETHODIMP CteBase::Refresh(void)
 		m_webviewWindow->ExecuteScript(L"location.reload();", this);
 		return S_OK;
 	}
-	return E_NOTIMPL;
+	return E_FAIL;
 }
 
 STDMETHODIMP CteBase::Refresh2(VARIANT *Level)
@@ -1201,6 +1190,9 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 		m_webviewWindow->Navigate(m_bstrPath);
 	}
 	m_webviewController->put_IsVisible(TRUE);
+	HWND hwnd;
+	GetWindow(&hwnd);
+	IDropTarget *pDropTarget = static_cast<IDropTarget *>(GetPropA(hwnd, "OleDropTargetInterface"));
 	return S_OK;
 }
 
