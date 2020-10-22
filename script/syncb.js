@@ -9,9 +9,13 @@ if (window.UI) {
 		api.Invoke(UI.clearTimeout, tid);
 	}
 
+	CloseWindow = function () {
+		api.Invoke(UI.CloseWindow);
+	}
+
 	InputDialog = function () {
 		api.Invoke(UI.InputDialog, arguments);
-	} 
+	}
 
 	OpenHttpRequest = function () {
 		api.Invoke(UI.OpenHttpRequest, arguments);
@@ -24,7 +28,7 @@ if (window.UI) {
 	Resize = function () {
 		api.Invoke(UI.Resize);
 	}
-	
+
 	setTimeout = function (fn) {
 		api.OutputDebugString(fn + "\n");
 		api.Invoke(UI.setTimeoutAsync, arguments);
