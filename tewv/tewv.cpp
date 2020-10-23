@@ -20,6 +20,7 @@ std::unordered_map<std::wstring, DISPID> g_umSW = {
 	{ L"path", TE_PROPERTY + 3 },
 	{ L"visible", TE_PROPERTY + 4 },
 	{ L"document", TE_PROPERTY + 5 },
+	{ L"window", TE_PROPERTY + 6 },
 };
 
 std::unordered_map<std::wstring, DISPID> g_umArray = {
@@ -549,6 +550,14 @@ STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD w
 			}
 			return S_OK;
 
+		case TE_PROPERTY + 6://window
+			if (pVarResult) {
+				if SUCCEEDED(get_Document(&pVarResult->pdispVal)) {
+					pVarResult->vt = VT_DISPATCH;
+				}
+			}
+			return S_OK;
+
 		case DISPID_VALUE://this
 			teSetObject(pVarResult, this);
 			return S_OK;
@@ -735,18 +744,17 @@ STDMETHODIMP CteBase::PutProperty(BSTR Property, VARIANT vtValue)
 	if (lstrcmpi(Property, L"document") == 0) {
 		SafeRelease(&m_pDocument);
 		GetDispatch(&vtValue, &m_pDocument);
-		return S_OK;
 	}
-
 	return S_OK;
-//	return m_webviewWindow->AddHostObjectToScript(Property, &vtValue);
 }
 
 STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 {
-	HRESULT hr = m_webviewWindow->ExecuteScript(Property, this);
-	teSetLong(pvtValue, hr);
-	return hr;
+	if (lstrcmpi(Property, L"version") == 0) {
+		teSetLong(pvtValue, VER_Y * 1000000 + VER_M * 10000 + VER_D * 100 + VER_Z);
+		return S_OK;
+	}
+	return E_FAIL;
 }
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
@@ -1084,10 +1092,10 @@ STDMETHODIMP CteBase::GetWindow(HWND *phwnd)
 				hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_WidgetWin_1", NULL);
 				if (hwnd1) {
 					hwnd = hwnd1;
-/*					hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_RenderWidgetHostHWND", NULL);
+					hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_RenderWidgetHostHWND", NULL);
 					if (hwnd1) {
 						hwnd = hwnd1;
-					}*/
+					}
 				}
 			}
 		}

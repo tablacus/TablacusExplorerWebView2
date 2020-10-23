@@ -233,7 +233,8 @@ InitUI = async function () {
 	}
 
 	UI.DownloadFile = DownloadFile = async function (url, fn) {
-		return await api.URLDownloadToFile(null, url, fn);
+		var hr = await RunEvent4("DownloadFile", url, fn);
+		return hr != null ? hr : await api.URLDownloadToFile(null, url, fn);
 	}
 
 	UI.CheckUpdate2 = async function (xhr, url, arg1) {
@@ -905,7 +906,7 @@ AddonOptions = async function (Id, fn, Data, bNew) {
 		var el = document.createElement('iframe');
 		el.id = 'panel1_' + Id;
 		if (window.chrome) {
-			el.srcdoc = await ReadTextFile(sURL);
+			el.srcdoc = (await ReadTextFile(sURL)).replace(/(<head[^>]*>)/i, '$1<base href="' + sURL.replace(/[^\/\\]*$/, "") + '">');
 		} else {
 			el.src = sURL;
 		}
@@ -1051,7 +1052,7 @@ KeySelect = function (o) {
 
 createHttpRequest = async function () {
 	var xhr = await RunEvent4("createHttpRequest");
-	if (xhr !== void 0) {
+	if (xhr != null) {
 		return xhr;
 	}
 	try {

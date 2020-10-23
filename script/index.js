@@ -299,14 +299,16 @@ ArrangeAddons = async function () {
 				g_.Error_source = Id;
 				if (!AddonId[Id]) {
 					var Enabled = GetNum(await item.getAttribute("Enabled"));
-					if (Enabled & 6) {
-						LoadLang2(BuildPath(await te.Data.Installed, "addons", Id, "lang", await GetLangId() + ".xml"));
-					}
-					if (Enabled & 8) {
-						LoadAddon("vbs", Id, arError);
-					}
-					if (Enabled & 1) {
-						LoadAddon("js", Id, arError);
+					if (Enabled && (!window.chrome || await item.getAttribute("Level") > 1)) {
+						if (Enabled & 6) {
+							LoadLang2(BuildPath(await te.Data.Installed, "addons", Id, "lang", await GetLangId() + ".xml"));
+						}
+						if (Enabled & 8) {
+							LoadAddon("vbs", Id, arError);
+						}
+						if (Enabled & 1) {
+							LoadAddon("js", Id, arError);
+						}
 					}
 					AddonId[Id] = true;
 				}
@@ -382,6 +384,7 @@ AddEventEx(document, "FullscreenChange", function () {
 });
 
 Init = async function () {
+	te.Data.MainWindow = $;
 	UI.OnLoad();
 	await InitCode();
 	DefaultFont = await $.DefaultFont;
