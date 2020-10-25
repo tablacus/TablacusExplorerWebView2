@@ -428,7 +428,7 @@ async function MoveTabControl() {
 async function SwapTabControl() {
 	var TC1 = await te.Ctrl(CTRL_TC);
 	var cTC = await te.Ctrls(CTRL_TC, false);
-	for (var list = api.CreateObject("Enum", cTC); !await list.atEnd(); await list.moveNext()) {
+	for (var list = await api.CreateObject("Enum", cTC); !await list.atEnd(); await list.moveNext()) {
 		var TC = await cTC[await list.item()];
 		if (await TC.Visible && await TC.Id != await TC1.Id && await TC.Left == document.F.Tab_Left.value && await TC.Top == document.F.Tab_Top.value &&
 			await TC.Width == document.F.Tab_Width.value && await TC.Height == document.F.Tab_Height.value) {
@@ -779,10 +779,13 @@ async function LoadMenus(nSelected) {
 	if (!g_x.Menus) {
 		var arFunc = await api.CreateObject("Array");
 		await MainWindow.RunEvent1("AddType", arFunc);
-		for (var i = 0; i < await GetLength(arFunc); ++i) {
+		if (window.chrome) {
+			arFunc = await api.CreateObject("SafeArray", arFunc);
+		}
+		for (var i = 0; i < arFunc.length; ++i) {
 			var o = oa[++oa.length - 1];
-			o.value = await arFunc[i];
-			o.innerText = await GetText(o.value);
+			o.value = arFunc[i];
+			o.innerText = await GetText(arFunc[i]);
 		}
 
 		oa = document.F.Menus;
@@ -838,11 +841,14 @@ async function LoadX(mode, fn, form) {
 		}
 		var arFunc = await api.CreateObject("Array");
 		await MainWindow.RunEvent1("AddType", arFunc);
+		if (window.chrome) {
+			arFunc = await api.CreateObject("SafeArray", arFunc);
+		}
 		var oa = form[mode + "Type"] || form.Type;
 		while (oa.length) {
 			oa.removeChild(oa[0]);
 		}
-		for (var i = 0; i < await GetLength(arFunc); ++i) {
+		for (var i = 0; i < arFunc.length; ++i) {
 			var o = oa[++oa.length - 1];
 			o.value = arFunc[i];
 			o.innerText = await GetText(arFunc[i]);
@@ -1081,7 +1087,7 @@ async function LoadAddons() {
 		}
 	}
 	for (var Id in AddonId) {
-		if (await fso.FileExists(path + Id + "\\config.xml")) {
+		if (await $.fso.FileExists(path + Id + "\\config.xml")) {
 			AddAddon(table, Id, false);
 		}
 	}
@@ -1276,13 +1282,10 @@ async function AddonRemove(Id) {
 	if (await AddonBeforeRemove(Id) < 0) {
 		return;
 	}
-	var sf = await api.Memory("SHFILEOPSTRUCT");
-	sf.hwnd = await api.GetForegroundWindow();
-	sf.wFunc = FO_DELETE;
-	sf.fFlags = 0;
-	sf.pFrom = BuildPath(await te.Data.Installed, "addons", Id);
-	if (await api.SHFileOperation(sf) == 0) {
-		if (!await sf.fAnyOperationsAborted) {
+	var path = BuildPath(await te.Data.Installed, "addons", Id);
+	await DeleteItem(path, 0);
+	setTimeout(async function () {
+		if (!await IsExists(path)) {
 			var table = document.getElementById("Addons");
 			table.deleteRow(GetRowIndexById("Addons_" + Id));
 			var table = document.getElementById("SortedAddons");
@@ -1291,7 +1294,7 @@ async function AddonRemove(Id) {
 			}
 			g_Chg.Addons = true;
 		}
-	}
+	}, 500);
 }
 
 async function SetAddonsRssults() {
@@ -1354,7 +1357,7 @@ InitOptions = async function () {
 	document.title = await GetText("Options") + " - " + TITLE;
 	MainWindow.g_.OptionsWindow = $;
 	var InstallPath = await te.Data.Installed;
-	document.F.ButtonInitConfig.disabled = (InstallPath == await te.Data.DataFolder) | !await fso.FolderExists(BuildPath(InstallPath, "layout"));
+	document.F.ButtonInitConfig.disabled = (InstallPath == await te.Data.DataFolder) | !await $.fso.FolderExists(BuildPath(InstallPath, "layout"));
 	for (var i = 0; i < document.F.length; ++i) {
 		var o = document.F[i];
 		var Id = o.name || o.id;
@@ -1406,7 +1409,6 @@ InitOptions = async function () {
 
 OpenIcon = function (o) {
 	setTimeout(async function () {
-		var fso = api.CreateObject("fso");
 		var data = [];
 		var a = o.id.split(/,/);
 		if (a[0] == "b") {
@@ -1625,7 +1627,7 @@ InitDialog = async function () {
 		var s = ['<table style="border-spacing: 2em; border-collapse: separate; width: 100%"><tr><td>'];
 		var src = await MakeImgSrc(await api.GetModuleFileName(null), 0, true, 48);
 		s.push('<img src="', src, '"></td><td><span style="font-weight: bold; font-size: 120%">', await AboutTE(2), '</span> (', await GetTextR((await api.sizeof("HANDLE") * 8) + '-bit'), ')<br>');
-		s.push('<br><a href="#" class="link" onclick="Run(0, this)">', await api.GetModuleFileName(null), '</a> (', await fso.GetFileVersion(await api.GetModuleFileName(null)), ')<br>');
+		s.push('<br><a href="#" class="link" onclick="Run(0, this)">', await api.GetModuleFileName(null), '</a> (', await $.fso.GetFileVersion(await api.GetModuleFileName(null)), ')<br>');
 		s.push('<br><a href="#" class="link" onclick="Run(1, this)">', BuildPath(await te.Data.DataFolder, "config"), '</a><br>');
 		s.push('<br><label>Information</label><input type="text" value="', await AboutTE(3), '" style="width: 100%" onclick="this.select()" readonly><br>');
 		var root = await te.Data.Addons.documentElement;
@@ -1774,7 +1776,10 @@ InitLocation = async function () {
 	}
 	await LoadLang2(BuildPath("addons", Addon_Id, "lang", await GetLangId() + ".xml"));
 	await LoadAddon("js", Addon_Id, await ar, param);
-	if (await GetLength(ar)) {
+	if (window.chrome) {
+		ar = await api.CreateObject("SafeArray", ar);
+	}
+	if (ar.length) {
 		setTimeout(function (ar) {
 			MessageBox(ar.join("\n\n"), TITLE, MB_OK);
 		}, 500, ar);
@@ -2091,7 +2096,7 @@ async function PortableX(Id) {
 		return;
 	}
 	var o = GetElement(Id);
-	var s = await fso.GetDriveName(await api.GetModuleFileName(null));
+	var s = await $.fso.GetDriveName(await api.GetModuleFileName(null));
 	SetValue(o, o.value.replace(await wsh.ExpandEnvironmentStrings("%UserProfile%"), "%UserProfile%").replace(new RegExp('^("?)' + s, "igm"), "$1%Installed%").replace(new RegExp('( "?)' + s, "igm"), "$1%Installed%").replace(new RegExp('(:)' + s, "igm"), "$1%Installed%"));
 }
 
@@ -2308,11 +2313,11 @@ async function GetTextEx(s) {
 }
 
 async function GetAddons() {
-	MainWindow.OpenHttpRequest(urlAddons + "index.xml", "http", AddonsList);
+	(window.chrome ? window : MainWindow).OpenHttpRequest(urlAddons + "index.xml", "http", AddonsList);
 }
 
 function GetIconPacks() {
-	MainWindow.OpenHttpRequest(urlIcons + "index.json", "http", IconPacksList);
+	(window.chrome ? window : MainWindow).OpenHttpRequest(urlIcons + "index.json", "http", IconPacksList);
 }
 
 function UpdateAddon(Id, o) {
@@ -2323,7 +2328,7 @@ function UpdateAddon(Id, o) {
 }
 
 async function CheckAddon(Id) {
-	return await fso.FileExists(BuildPath(await te.Data.Installed, "addons", Id, "config.xml"));
+	return $.fso.FileExists(BuildPath(await te.Data.Installed, "addons", Id, "config.xml"));
 }
 
 function AddonsSearch() {
@@ -2349,7 +2354,7 @@ async function AddonsList(xhr2) {
 	if (xhr2) {
 		xhr = xhr2;
 	}
-	var xml = await xhr.get_responseXML ? xhr.get_responseXML() : xhr.responseXML;
+	var xml = await xhr.get_responseXML ? await xhr.get_responseXML() : await xhr.responseXML;
 	if (xml) {
 		xmlAddons = await xml.getElementsByTagName("Item");
 		AddonsAppend()
@@ -2375,15 +2380,15 @@ function SetTable(table, td) {
 }
 
 async function AddonsAppend() {
-	var Progress = api.CreateObject("ProgressDialog");
-	var i = 0, td = [];
+	var Progress = await api.CreateObject("ProgressDialog");
+	var td = [];
 	Progress.StartProgressDialog(await te.hwnd, null, 2);
 	try {
 		Progress.SetAnimation(hShell32, 150);
 		Progress.SetLine(1, await api.LoadString(hShell32, 13585) || await api.LoadString(hShell32, 6478), true);
-		while (!await Progress.HasUserCancelled() && await xmlAddons[i]) {
-			ArrangeAddon(xmlAddons[i++], td, Progress);
-			var nLen = await GetLength(xmlAddons);
+		var nLen = await GetLength(xmlAddons);
+		for (var i = 0; i < nLen && !await Progress.HasUserCancelled(); ++i) {
+			await ArrangeAddon(await xmlAddons[i], td, Progress);
 			Progress.SetTitle(Math.floor(100 * i / nLen) + "%");
 			Progress.SetProgress(i, nLen);
 		}
@@ -2398,33 +2403,50 @@ async function AddonsAppend() {
 	Progress.StopProgressDialog();
 }
 
+GetAddonInfo3 = async function (xml, info, Tag) {
+	var items = await xml.getElementsByTagName(Tag);
+	if (await GetLength(items)) {
+		var item = await items[0].childNodes;
+		var nLen = await GetLength(item);
+		for (var i = 0; i < nLen; ++i) {
+			var item1 = await item[i];
+			var n = await item1.tagName;
+			var s = await item1.text || await item1.textContent;
+			info[n] = s;
+		}
+	}
+}
+
 async function ArrangeAddon(xml, td, Progress) {
 	var Id = await xml.getAttribute("Id");
 	var s = [];
 	var strUpdate = "";
 	if (await Search(xml)) {
-		var info = api.CreateObject("Object");
+		var info = await api.CreateObject("Object");
 		for (var i = arLangs.length; i--;) {
-			await GetAddonInfo2(xml, info, arLangs[i]);
+			await GetAddonInfo3(xml, info, arLangs[i]);
 		}
 		var pubDate = "";
 		var dt = new Date(await info.pubDate);
 		Progress.SetLine(2, await info.Name, true);
 		if (await info.pubDate) {
-			pubDate = await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, dt, await api.GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SSHORTDATE)) + " ";
+			pubDate = await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, dt.getTime(), await api.GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SSHORTDATE)) + " ";
 		}
-		s.push('<table width="100%"><tr><td width="100%"><b style="font-size: 1.3em">', await info.Name, "</b>&nbsp;", await info.Version, "&nbsp;", await info.Creator, "<br>", await info.Description, "<br>");
+		s.push('<table width="100%"><tr><td width="100%"><b style="font-size: 1.3em">', await info.Name, "</b>&nbsp;");
+		s.push(await info.Version, "&nbsp;");
+		s.push(await info.Creator, "<br>")
+		s.push(await info.Description, "<br>");
 		if (await info.Details) {
 			s.push('<a href="#" title="', await info.Details, '" class="link" onclick="wsh.run(this.title); return false;">', await GetText('Details'), '</a><br>');
 		}
 		s.push(pubDate, '</td><td align="right">');
 		var filename = await info.filename;
 		if (!filename) {
-			filename = Id + '_' + await info.Version.replace(/\D/, '') + '.zip';
+			filename = Id + '_' + (await info.Version).replace(/\D/, '') + '.zip';
 		}
 		var dt2 = (dt.getTime() / (24 * 60 * 60 * 1000)) - await info.Version;
 		var bUpdate = false;
-		if (CheckAddon(Id)) {
+		if (await CheckAddon(Id)) {
 			var installed = await GetAddonInfo(Id);
 			if (await installed.Version >= await info.Version) {
 				try {
@@ -2438,7 +2460,7 @@ async function ArrangeAddon(xml, td, Progress) {
 					if (hFind == INVALID_HANDLE_VALUE) {
 						return;
 					}
-					if (CalcVersion(await installed.DllVersion) <= CalcVersion(await fso.GetFileVersion(BuildPath(path, await wfd.cFileName)))) {
+					if (CalcVersion(await installed.DllVersion) <= CalcVersion(await $.fso.GetFileVersion(BuildPath(path, await wfd.cFileName)))) {
 						return;
 					}
 				} catch (e) {
@@ -2498,7 +2520,7 @@ async function Install(o, bUpdate) {
 		return;
 	}
 	var file = o.title.replace(/\./, "") + '.zip';
-	MainWindow.OpenHttpRequest(urlAddons + Id + '/' + file, "http", Install2, o);
+	(window.chrome ? window : MainWindow).OpenHttpRequest(urlAddons + Id + '/' + file, "http", Install2, o);
 }
 
 async function Install2(xhr, url, o) {
@@ -2508,14 +2530,14 @@ async function Install2(xhr, url, o) {
 	await CreateFolder(temp);
 	var dest = BuildPath(temp, Id);
 	await DeleteItem(dest);
-	var hr = await MainWindow.Extract(BuildPath(temp, file), temp, xhr);
+	var hr = await (window.chrome ? window : MainWindow).Extract(BuildPath(temp, file), temp, xhr);
 	if (hr) {
 		MessageBox([api.LoadString(hShell32, 4228).replace(/^\t/, "").replace("%d", await api.sprintf(99, "0x%08x", hr)), await GetText("Extract"), file].join("\n\n"), TITLE, MB_OK | MB_ICONSTOP);
 		return;
 	}
 	var configxml = dest + "\\config.xml";
 	var nDog = 300;
-	while (!await fso.FileExists(configxml)) {
+	while (!await $.fso.FileExists(configxml)) {
 		if (await wsh.Popup(await GetText("Please wait."), 1, TITLE, MB_ICONINFORMATION | MB_OKCANCEL) == IDCANCEL || nDog-- == 0) {
 			return;
 		}
@@ -2542,7 +2564,7 @@ async function InstallIcon(o) {
 		return;
 	}
 	var Id = o.title.replace(/_[^_]*$/, "");
-	MainWindow.OpenHttpRequest(urlIcons + Id + '/' + o.title.replace(/\./g, "") + '.zip', "http", InstallIcon2, o);
+	(window.chrome ? window : MainWindow).OpenHttpRequest(urlIcons + Id + '/' + o.title.replace(/\./g, "") + '.zip', "http", InstallIcon2, o);
 }
 
 async function InstallIcon2(xhr, url, o) {
@@ -2551,7 +2573,7 @@ async function InstallIcon2(xhr, url, o) {
 	await CreateFolder(temp);
 	var dest = BuildPath(await te.Data.DataFolder, "icons");
 	await CreateFolder(dest);
-	var hr = await Extract(BuildPath(temp, file), dest, xhr);
+	var hr = await (window.chrome ? window : MainWindow).Extract(BuildPath(temp, file), dest, xhr);
 	if (hr) {
 		MessageBox([(await api.LoadString(hShell32, 4228)).replace(/^\t/, "").replace("%d", await api.sprintf(99, "0x%08x", hr)), await GetText("Extract"), file].join("\n\n"), TITLE, MB_OK | MB_ICONSTOP);
 		return;
@@ -2589,7 +2611,7 @@ async function IconPacksList1(s, Id, info, json) {
 	if (!json) {
 		s.push('<input type="button" onclick="InstallIcon(this)" title="', Id, '_', info.version, '" value="', await GetText("Install"), '" style="float: right;">');
 	}
-	s.push("<br>", await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, new Date(info.pubDate), api.GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SSHORTDATE)));
+	s.push("<br>", await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, new Date(info.pubDate).getTime(), api.GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SSHORTDATE)));
 	return true;
 }
 
@@ -2602,14 +2624,9 @@ async function IconPacksList(xhr) {
 	if (!xhr) {
 		return;
 	}
-	var s;
-	var ado = await OpenAdodbFromTextFile(BuildPath(await te.Data.DataFolder, "icons\\config.json"), "utf-8");
-	if (ado) {
-		s = await ado.ReadText();
-		ado.Close();
-	}
+	var s = await ReadTextFile(BuildPath(await te.Data.DataFolder, "icons\\config.json"));
 	var json1 = JSON.parse(s || '{}');
-	var text = xhr.get_responseText ? xhr.get_responseText() : xhr.responseText;
+	var text = await xhr.get_responseText ? await xhr.get_responseText() : xhr.responseText;
 	var json = JSON.parse(text);
 	var td = [];
 	var Installed = "";
@@ -2626,7 +2643,7 @@ async function IconPacksList(xhr) {
 					s1 = info.name[await GetLangId()] || info.name.en;
 				} else if (g_nSort["1_3"] == 1) {
 					if (json.pubDate) {
-						s1 = await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, new Date(info.pubDate), "yyyyMMdd");
+						s1 = await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, new Date(info.pubDate).getTime(), "yyyyMMdd");
 					}
 				} else {
 					s1 = n;
@@ -2781,7 +2798,7 @@ async function SortAddons(n) {
 					var info = await GetAddonInfo(Id);
 					var pubDate = await info.pubDate;
 					if (pubDate) {
-						s = await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, new Date(pubDate), "yyyyMMdd");
+						s = await api.GetDateFormat(LOCALE_USER_DEFAULT, 0, new Date(pubDate).getTime(), "yyyyMMdd");
 					}
 				} else {
 					s = Id;

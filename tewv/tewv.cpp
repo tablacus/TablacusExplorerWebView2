@@ -1009,8 +1009,10 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
 		if (_CreateCoreWebView2EnvironmentWithOptions) {
-			_CreateCoreWebView2EnvironmentWithOptions(NULL, NULL, NULL, this);
-			//ShowWindow(hwndParent, SW_SHOWNORMAL);
+			WCHAR pszTemp[MAX_PATH * 2];
+			GetTempPath(MAX_PATH * 2, pszTemp);
+			PathAppend(pszTemp, L"tablacus");
+			_CreateCoreWebView2EnvironmentWithOptions(NULL, pszTemp, NULL, this);
 			return S_OK;
 		}
 	}

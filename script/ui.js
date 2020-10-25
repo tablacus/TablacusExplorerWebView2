@@ -130,21 +130,23 @@ InitUI = async function () {
 			if (await arg && await arg.pcRef) {
 				arg.pcRef[0] = await arg.pcRef[0] - 1;
 			}
-			if (xhr.status == 200) {
-				return fn(xhr, url, await arg);
+			if (await xhr.status == 200) {
+				if (fn) {
+					fn(xhr, url, await arg);
+					fn = void 0;
+				}
+				return;
 			}
 			if (/^http/.test(alt)) {
-				return UI.OpenHttpRequest(/^https/.test(url) && alt == "http" ? url.replace(/^https/, alt) : alt, '', fn, await arg);
+				UI.OpenHttpRequest(/^https/.test(url) && alt == "http" ? url.replace(/^https/, alt) : alt, '', fn, await arg);
+				return;
 			}
-			ShowXHRError(url, xhr.status);
+			ShowXHRError(url, await xhr.status);
 		}
-		if (xhr.onload !== void 0) {
-			xhr.onload = fnLoaded;
-		} else {
-			xhr.onreadystatechange = function () {
-				if (xhr.readyState == 4) {
-					fnLoaded();
-				}
+		xhr.onload = fnLoaded;
+		xhr.onreadystatechange = async function () {
+			if (await xhr.readyState == 4) {
+				fnLoaded();
 			}
 		}
 		if (/ml$/i.test(url)) {
@@ -153,7 +155,7 @@ InitUI = async function () {
 		if (await arg && await arg.pcRef) {
 			arg.pcRef[0] = await arg.pcRef[0] + 1;
 		}
-		if (window.chrome && /\.zip$/i.test(url)) {
+		if (window.chrome && /\.zip$|\.nupkg$/i.test(url)) {
 			xhr.responseType = "blob";
 		}
 		xhr.open("GET", url, true);
@@ -233,13 +235,13 @@ InitUI = async function () {
 	}
 
 	UI.DownloadFile = DownloadFile = async function (url, fn) {
-		var hr = await RunEvent4("DownloadFile", url, fn);
+		var hr = await MainWindow.RunEvent4("DownloadFile", url, fn);
 		return hr != null ? hr : await api.URLDownloadToFile(null, url, fn);
 	}
 
 	UI.CheckUpdate2 = async function (xhr, url, arg1) {
-		var arg = api.CreateObject("Object");
-		var Text = xhr.get_responseText ? xhr.get_responseText() : xhr.responseText;
+		var arg = await api.CreateObject("Object");
+		var Text = await xhr.get_responseText ? await xhr.get_responseText() : xhr.responseText;
 		var json = window.JSON ? JSON.parse(Text) : api.GetScriptDispatch("function fn () { return " + Text + "}", "JScript", {}).fn();
 		if (json.assets && json.assets[0]) {
 			arg.size = json.assets[0].size / 1024;
@@ -286,24 +288,24 @@ InitUI = async function () {
 		}
 		var te_exe = await arg.temp + "\\te64.exe";
 		var nDog = 300;
-		while (!await fso.FileExists(te_exe)) {
+		while (!await $.fso.FileExists(te_exe)) {
 			if (await wsh.Popup(await GetText("Please wait."), 1, TITLE, MB_OKCANCEL) == IDCANCEL || nDog-- == 0) {
 				return;
 			}
 		}
 		var arDel = [];
 		var addons = await arg.temp + "\\addons";
-		if (await fso.FolderExists(await arg.temp + "\\config")) {
+		if (await $.fso.FolderExists(await arg.temp + "\\config")) {
 			arDel.push(await arg.temp + "\\config");
 		}
 		for (var i = 32; i <= 64; i += 32) {
 			te_exe = await arg.temp + '\\te' + i + '.exe';
 			var te_old = BuildPath(await te.Data.Installed, 'te' + i + '.exe');
-			if (!await fso.FileExists(te_old) || await fso.GetFileVersion(te_exe) == await fso.GetFileVersion(te_old)) {
+			if (!await $.fso.FileExists(te_old) || await $.fso.GetFileVersion(te_exe) == await $.fso.GetFileVersion(te_old)) {
 				arDel.push(te_exe);
 			}
 		}
-		for (var list = await api.CreateObject("Enum", await fso.GetFolder(addons).SubFolders); !await list.atEnd(); await list.moveNext()) {
+		for (var list = await api.CreateObject("Enum", await $.fso.GetFolder(addons).SubFolders); !await list.atEnd(); await list.moveNext()) {
 			var n = await list.item().Name;
 			var items = await te.Data.Addons.getElementsByTagName(n);
 			if (!items || GetLength(items) == 0) {
@@ -621,7 +623,7 @@ CloseSubWindows = async function () {
 	}
 }
 
-MouseOver = function (o) {
+MouseOver = async function (o) {
 	o = o.srcElement || o;
 	if (/^button$|^menu$/i.test(o.className)) {
 		if (ui_.objHover && o != ui_.objHover) {
@@ -629,7 +631,7 @@ MouseOver = function (o) {
 		}
 		var bHover = window.chrome;
 		if (!bHover) {
-			var pt = api.Memory("POINT");
+			var pt = await api.Memory("POINT");
 			api.GetCursorPos(pt);
 			var ptc = pt.Clone();
 			api.ScreenToClient(WebBrowser.hwnd, ptc);
@@ -804,15 +806,6 @@ LoadAddon = async function (ext, Id, arError, param) {
 	return r;
 }
 
-BrowserCreated = async function () {
-	var eo = await eventTE["browsercreated"];
-	var nLen = await GetLength(eo);
-	for (var i = 0; i < nLen; ++i) {
-		var fn = await eo[i];
-		await wsh.Popup(fn);
-	}
-}
-
 //Options
 AddonOptions = async function (Id, fn, Data, bNew) {
 	await LoadLang2(BuildPath("addons", Id, "lang", await GetLangId() + ".xml"));
@@ -868,7 +861,7 @@ AddonOptions = async function (Id, fn, Data, bNew) {
 		opt = await api.CreateObject("Object");
 		opt.MainWindow = await MainWindow;
 		opt.Data = Data;
-		opt.event = api.CreateObject("Object");
+		opt.event = await api.CreateObject("Object");
 		if (fn) {
 			opt.event.TEOk = fn;
 		} else if (window.g_Chg) {
@@ -1001,6 +994,7 @@ MakeKeySelect = async function () {
 
 SetKeyShift = async function () {
 	var key = ((document.E && document.E.KeyKey) || document.F.KeyKey || document.F.Key).value;
+	key = key.replace(/^(.+),.+/, "$1");
 	var nLen = await GetLength(await MainWindow.g_.KeyState);
 	for (var i = 0; i < nLen; ++i) {
 		var s = await MainWindow.g_.KeyState[i][0];
@@ -1047,18 +1041,20 @@ KeyShift = function (o) {
 
 KeySelect = function (o) {
 	var oKey = (document.E && document.E.KeyKey) || document.F.KeyKey || document.F.Key;
-	oKey.value = oKey.value.replace(/(\+)[^\+]*$|^[^\+]*$/, "$1") + o[o.selectedIndex].value;
+	var ar = oKey.value == "," ? [","] : oKey.value.split(",");
+	ar[0] = ar[0].replace(/(\+)[^\+]*$|^[^\+]*$/, "$1") + o[o.selectedIndex].value;
+	oKey.value = ar.join(",");
 }
 
 createHttpRequest = async function () {
-	var xhr = await RunEvent4("createHttpRequest");
+	var xhr = await MainWindow.RunEvent4("createHttpRequest");
 	if (xhr != null) {
 		return xhr;
 	}
 	try {
-		return window.XMLHttpRequest && ui_.IEVer >= 9 ? new XMLHttpRequest() : api.CreateObject("Msxml2.XMLHTTP");
+		return window.XMLHttpRequest && ui_.IEVer >= 9 ? new XMLHttpRequest() : await api.CreateObject("Msxml2.XMLHTTP");
 	} catch (e) {
-		return api.CreateObject("Microsoft.XMLHTTP");
+		return await api.CreateObject("Microsoft.XMLHTTP");
 	}
 }
 

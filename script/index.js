@@ -314,9 +314,12 @@ ArrangeAddons = async function () {
 				}
 				g_.Error_source = "";
 			}
-			if (await arError.length || await arError.Count) {
+			if (window.chrome) {
+				arError = await api.CreateObject("SafeArray", arError);
+			}
+			if (arError.length) {
 				setTimeout(async function (arError) {
-					if (await MessageBox(await arError.join("\n\n"), TITLE, MB_OKCANCEL) != IDCANCEL) {
+					if (await MessageBox(arError.join("\n\n"), TITLE, MB_OKCANCEL) != IDCANCEL) {
 						te.Data.bErrorAddons = true;
 						ShowOptions("Tab=Add-ons");
 					}
@@ -325,7 +328,6 @@ ArrangeAddons = async function () {
 		}
 	}
 	RunEventUI("BrowserCreatedEx");
-	await RunEvent1("BrowserCreated", document);
 	var cl = GetWinColor(window.getComputedStyle ? getComputedStyle(document.body).getPropertyValue('background-color') : document.body.currentStyle.backgroundColor);
 	ArrangeAddons1(cl);
 }
