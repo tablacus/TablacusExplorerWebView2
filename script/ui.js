@@ -204,9 +204,6 @@ InitUI = async function () {
 	}
 
 	UI.ShowOptions = async function (opt) {
-		opt.event.onbeforeunload = function () {
-			MainWindow.g_.dlgs.Options = void 0;
-		};
 		g_.dlgs.Options = await ShowDialog("options.html", opt);
 	}
 
@@ -700,7 +697,7 @@ GetFolderViewEx = async function (Ctrl, pt, bStrict) {
 			}
 			o = o.offsetParent;
 		}
-		return te.Ctrl(CTRL_FV);
+		return await te.Ctrl(CTRL_FV);
 	}
 	return await GetFolderView(Ctrl, pt, bStrict);
 }
