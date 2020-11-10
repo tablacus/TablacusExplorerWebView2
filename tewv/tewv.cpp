@@ -432,11 +432,13 @@ CteBase::CteBase()
 	m_pdisp = NULL;
 	m_bstrPath = NULL;
 	m_pDocument = NULL;
-
 }
 
 CteBase::~CteBase()
 {
+	HWND hwnd;
+	GetWindow(&hwnd);
+	RevokeDragDrop(hwnd);
 	teSysFreeString(&m_bstrPath);
 	SafeRelease(&m_pOleClientSite);
 	SafeRelease(&m_pdisp);
@@ -454,6 +456,7 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, IOleObject),
 		QITABENT(CteBase, IOleWindow),
 		QITABENT(CteBase, IOleInPlaceObject),
+		QITABENT(CteBase, IDropTarget),
 		QITABENT(CteBase, IServiceProvider),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler),
@@ -536,6 +539,9 @@ STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD w
 			return S_OK;
 	
 		case TE_PROPERTY + 4://visible
+			if (nArg >= 0) {
+				put_Visible(GetIntFromVariant(&pDispParams->rgvarg[nArg]));
+			}
 			if (pVarResult) {
 				get_Visible(&pVarResult->boolVal);
 				pVarResult->vt = VT_BOOL;
@@ -750,6 +756,11 @@ STDMETHODIMP CteBase::PutProperty(BSTR Property, VARIANT vtValue)
 
 STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 {
+	if (lstrcmpi(Property, L"InvokeMethod") == 0) {
+		BSTR bs = ::SysAllocString(L"_InvokeMethod();");
+		m_webviewWindow->ExecuteScript(bs, this);
+		teSysFreeString(&bs);
+	}
 	if (lstrcmpi(Property, L"version") == 0) {
 		teSetLong(pvtValue, VER_Y * 1000000 + VER_M * 10000 + VER_D * 100 + VER_Z);
 		return S_OK;
@@ -925,7 +936,19 @@ STDMETHODIMP CteBase::get_RegisterAsDropTarget(VARIANT_BOOL *pbRegister)
 
 STDMETHODIMP CteBase::put_RegisterAsDropTarget(VARIANT_BOOL bRegister)
 {
-	return E_NOTIMPL;
+	HWND hwnd;
+	GetWindow(&hwnd);
+	RevokeDragDrop(hwnd);
+	if (bRegister) {
+		IDocHostUIHandler *pDocHostUIHandler;
+		if SUCCEEDED(m_pOleClientSite->QueryInterface(IID_PPV_ARGS(&pDocHostUIHandler))) {
+			IDropTarget	*pDropTarget;
+			pDocHostUIHandler->GetDropTarget(this, &pDropTarget);
+			RegisterDragDrop(hwnd, pDropTarget);
+			pDropTarget->Release();
+		}
+	}
+	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_TheaterMode(VARIANT_BOOL *pbRegister)
@@ -1009,10 +1032,10 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
 		if (_CreateCoreWebView2EnvironmentWithOptions) {
-			WCHAR pszTemp[MAX_PATH * 2];
-			GetTempPath(MAX_PATH * 2, pszTemp);
-			PathAppend(pszTemp, L"tablacus");
-			_CreateCoreWebView2EnvironmentWithOptions(NULL, pszTemp, NULL, this);
+			WCHAR pszDataPath[MAX_PATH];
+			GetTempPath(MAX_PATH, pszDataPath);
+			PathAppend(pszDataPath, L"tablacus");
+			_CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, NULL, this);
 			return S_OK;
 		}
 	}
@@ -1149,6 +1172,27 @@ STDMETHODIMP CteBase::ReactivateAndUndo(void)
 	return S_OK;
 }
 
+//IDropTarget
+STDMETHODIMP CteBase::DragEnter(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::DragOver(DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::DragLeave()
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
+{
+	return E_NOTIMPL;
+}
+
 //IServiceProvider
 STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 {
@@ -1200,9 +1244,6 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 		m_webviewWindow->Navigate(m_bstrPath);
 	}
 	m_webviewController->put_IsVisible(TRUE);
-	HWND hwnd;
-	GetWindow(&hwnd);
-	IDropTarget *pDropTarget = static_cast<IDropTarget *>(GetPropA(hwnd, "OleDropTargetInterface"));
 	return S_OK;
 }
 
@@ -1833,6 +1874,11 @@ STDMETHODIMP CteObjectEx::GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid)
 		++itr;
 	}
 	if (itr != m_mData.end()) {
+		while (itr->second.vt == VT_EMPTY) {
+			if (++itr == m_mData.end()) {
+				return S_FALSE;
+			}
+		}
 		*pid = itr->first;
 		return S_OK;
 	}

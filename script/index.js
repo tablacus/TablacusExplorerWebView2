@@ -67,8 +67,8 @@ function ResetScroll () {
 }
 
 
-function PanelCreated(Ctrl) {
-	RunEvent1("PanelCreated", Ctrl);
+function PanelCreated(Ctrl, Id) {
+	RunEvent1("PanelCreated", Ctrl, Id);
 }
 
 Activate = async function (o, id) {
@@ -112,8 +112,7 @@ SetAddon = async function (strName, Location, Tag, strVAlign) {
 				o.style.verticalAlign = strVAlign;
 			}
 		} else if (Location == "Inner") {
-			AddEvent("PanelCreated", async function (Ctrl) {
-				var Id = await Ctrl.Id;
+			AddEvent("PanelCreated", function (Ctrl, Id) {
 				SetAddon(null, "Inner1Left_" + Id, Tag.replace(/\$/g, Id));
 			});
 		}
@@ -131,8 +130,15 @@ SetAddon = async function (strName, Location, Tag, strVAlign) {
 	return Location;
 }
 
-UI.Resize = Resize = function () {
-	if (!ui_.tidResize) {
+RunSplitter = async function (ev, n) {
+	if (ev.button == 0) {
+		api.ObjPutI(await g_.mouse, "Capture", n);
+		api.SetCapture(await te.hwnd);
+	}
+}
+
+Resize = function () {
+	if (ui_.tidResize) {
 		clearTimeout(ui_.tidResize);
 	}
 	ui_.tidResize = setTimeout(Resize2, 500);
@@ -142,9 +148,9 @@ UI.StartGestureTimer = async function () {
 	var i = await te.Data.Conf_GestureTimeout;
 	if (i) {
 		clearTimeout(await g_.mouse.tidGesture);
-		g_.mouse.tidGesture = setTimeout(function () {
+		api.ObjPutI(await g_.mouse, "tidGesture", setTimeout(function () {
 			g_.mouse.EndGesture(true);
-		}, i);
+		}, i));
 	}
 }
 
@@ -210,6 +216,19 @@ UI.ExitFullscreen = function () {
 	}
 }
 
+UI.MoveSplitter = async function (x, y, n) {
+	var w = document.documentElement.offsetWidth || document.body.offsetWidth;
+	if (x >= w) {
+		x = w - 1;
+	}
+	if (n == 1) {
+		te.Data["Conf_LeftBarWidth"] = x;
+	} else if (n == 2) {
+		te.Data["Conf_RightBarWidth"] = w - x;
+	}
+	Resize();
+}
+
 importJScript = $.importScript;
 
 te.OnArrange = async function (Ctrl, rc) {
@@ -229,11 +248,11 @@ te.OnArrange = async function (Ctrl, rc) {
 			s.push('<table id="InnerView_$" class="layout" style="width: 100%"><tr><td id="Inner2Left_$" style="width: 0"></td><td id="Inner2Center_$"></td><td id="Inner2Right_$" style="width: 0; overflow: auto"></td></tr></table>');
 			s.push('<div id="InnerBottom_$"></div></td><td id="InnerRight_$" class="sidebar" style="width: 0; display: none"></td></tr></table>');
 			document.getElementById("Panel").insertAdjacentHTML("BeforeEnd", s.join("").replace(/\$/g, Id));
-			await PanelCreated(Ctrl);
+			await PanelCreated(Ctrl, Id);
 			o = document.getElementById("Panel_" + Id);
 			ui_.Panels[Id] = o;
 			ApplyLang(o);
-			ChangeView(await Ctrl.Selected);
+			Resize();
 		}
 		o.style.left = await rc.left + "px";
 		o.style.top = await rc.top + "px";
@@ -264,7 +283,7 @@ te.OnArrange = async function (Ctrl, rc) {
 		o = document.getElementById("Inner2Center_" + Id).style;
 		o.width = Math.max(await rc.right - await rc.left, 0) + "px";
 		o.height = Math.max(await rc.bottom - await rc.top, 0) + "px";
-		te.ArrangeCB(await Ctrl, await rc);
+		te.ArrangeCB(Ctrl, rc);
 	}
 }
 
@@ -274,7 +293,6 @@ g_.event.windowregistered = function (Ctrl) {
 	}
 	ui_.bWindowRegistered = true;
 }
-
 
 ArrangeAddons = async function () {
 	g_.Locations = await api.CreateObject("Object");
@@ -328,7 +346,7 @@ ArrangeAddons = async function () {
 		}
 	}
 	RunEventUI("BrowserCreatedEx");
-	var cl = GetWinColor(window.getComputedStyle ? getComputedStyle(document.body).getPropertyValue('background-color') : document.body.currentStyle.backgroundColor);
+	var cl = await GetWinColor(window.getComputedStyle ? getComputedStyle(document.body).getPropertyValue('background-color') : document.body.currentStyle.backgroundColor);
 	ArrangeAddons1(cl);
 }
 
@@ -398,4 +416,5 @@ Init = async function () {
 	await ApplyLang(document);
 	await ArrangeAddons();
 	await InitWindow();
+	WebBrowser.DropMode = 1;
 }

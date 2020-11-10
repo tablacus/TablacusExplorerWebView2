@@ -2,39 +2,32 @@
 
 if (window.UI) {
 	BlurId = function (Id) {
-		api.Invoke(UI.BlurId, Id);
+		InvokeUI("BlurId", arguments);
 	}
 
-	clearTimeout = function (tid) {
-		api.Invoke(UI.clearTimeout, tid);
+	clearTimeout = function () {
+		InvokeUI("clearTimeout", arguments);
 	}
 
 	CloseWindow = function () {
-		api.Invoke(UI.CloseWindow);
-	}
-
-	InputDialog = function () {
-		api.Invoke(UI.InputDialog, arguments);
+		InvokeUI("CloseWindow");
 	}
 
 	OpenHttpRequest = function () {
-		api.Invoke(UI.OpenHttpRequest, arguments);
+		InvokeUI("OpenHttpRequest", arguments);
 	}
 
 	ReloadCustomize = function () {
-		api.Invoke(UI.ReloadCustomize);
+		InvokeUI("ReloadCustomize");
+		return S_OK;
 	}
 
 	Resize = function () {
-		api.Invoke(UI.Resize);
+		InvokeUI("Resize");
 	}
 
-	setTimeout = function (fn) {
-		api.OutputDebugString(fn + "\n");
+	setTimeout = function () {
 		api.Invoke(UI.setTimeoutAsync, arguments);
 	}
 
-	ShowDialog = function () {
-		api.Invoke(UI.ShowDialog, arguments);
-	}
 }

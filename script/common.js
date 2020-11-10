@@ -22,19 +22,14 @@ importScript = async function (fn) {
 		if (/\.vbs$/i.test(fn)) {
 			hr = ExecScriptEx(await window.Ctrl, s, "VBScript", await $.pt, await $.dataObj, await $.grfKeyState, await $.pdwEffect, await $.bDrop);
 		} else {
-			if (window.chrome && window.alert) {
-				s = "(async () => {" + s + "\n})();";
-			} else {
-				s = RemoveAsync(s);
-			}
-			new Function(s)();
+			new Function(window.chrome && window.alert ? "(async () => {" + s + "\n})();" : RemoveAsync(s))();
 			hr = S_OK;
 		}
 	}
 	return hr;
 }
 
-if (!window.UI && !window.chrome) {
+if (!window.InitUI && !window.chrome) {
 	if (window.alert) {
 		importScript("script\\ui.js");
 		InitUI();
@@ -86,7 +81,7 @@ DecodeSC = function (s) {
 }
 
 GetIconSize = function (h, a) {
-	return h || a * (window.deviceYDPI || screen.deviceYDPI) / 96 || window.IconSize;
+	return h || a * screen.deviceYDPI / 96 || window.IconSize;
 }
 
 GetGestureX = async function (ar) {
@@ -148,7 +143,7 @@ GetWinColor = async function (c) {
 }
 
 FindText = async function () {
-	if (window.chrome) {
+	if (window.chrome || ui_.IEVer < 8) {
 		wsh.SendKeys("^f");
 	} else {
 		api.OleCmdExec(document, null, 32, 0, 0);
@@ -213,6 +208,38 @@ LoadImgDll = async function (icon, index) {
 }
 
 amp2ul = function (s) {
-	s = s.replace(/&amp;/ig, "&");
-	return /;/.test(s) ? s : s.replace(/&(.)/ig, "<u>$1</u>");
+	return s.replace(/&amp;|&/ig, "");
+}
+
+EscapeJson = function (s) {
+	return s.replace(/([\\|"|\/])/g, '\\$1').replace(/[\b]/g, '\\b').replace(/[\f]/g, '\\f').replace(/[\n]/g, '\\n').replace(/[\r]/g, '\\r').replace(/[\t]/g, '\\t');
+};
+
+if (!window.JSON) {
+	JSON = {
+		parse: function (s) {
+			return new Function('return ' + (s || {}))();
+		},
+		stringify: function (o) {
+			var ar = [];
+			if (Array.isArray(o)) {
+				for (var i = 0; i < o.length; ++i) {
+					if ("object" === typeof o[i]) {
+						ar.push(this.stringify(o[i]));
+					} else {
+						ar.push('"' + EscapeJson(o[i]) + '"');
+					}
+				}
+				return '[' + ar.join(",") + "]";
+			}
+			for (var n in o) {
+				if ("object" === typeof o[n]) {
+					ar.push('"' + EscapeJson(n) + '":' + this.stringify(o[n]));
+				} else {
+					ar.push('"' + EscapeJson(n) + '":"' + EscapeJson(o[n]) + '"');
+				}
+			}
+			return '{' + ar.join(",") + "}";
+		}
+	}
 }

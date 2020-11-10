@@ -62,11 +62,11 @@ function LoadChecked(form) {
 	for (var i = 0; i < form.length; ++i) {
 		var o = form[i];
 		var ar = o.id.split("=");
-		if (ar.length > 1 && form[ar[0]].value == (/0x/i.test(ar[1]) ? parseInt(ar[1], 16) : ar[1])) {
+		if (ar.length > 1 && form[ar[0]].value == Number(ar[1])) {
 			form[i].checked = true;
 		}
 		ar = o.id.split(":");
-		if (ar.length > 1 && form[ar[0]].value & (/0x/i.test(ar[1]) ? parseInt(ar[1], 16) : ar[1])) {
+		if (ar.length > 1 && form[ar[0]].value & Number(ar[1])) {
 			form[i].checked = true;
 		}
 	}
@@ -257,26 +257,20 @@ function ClickButton(n, f) {
 
 function SetRadio(o) {
 	var ar = o.id.split("=");
-	o.form[ar[0]].value = ar[1];
-	var res = /^(Tab|Tree|View|Conf)/.exec(ar[0]);
-	if (res) {
-		MainWindow.g_.OptionsWindow.g_Chg[res[1]] = true;
-		MainWindow.g_.OptionsWindow.g_bChanged = true;
-	}
+	var el = o.form[ar[0]];
+	el.value = ar[1];
+	FireEvent(el, "change");
 }
 
 async function SetCheckbox(o) {
 	var ar = o.id.split(":");
+	var el = o.form[ar[0]];
 	if (o.checked) {
-		o.form[ar[0]].value |= (await api.sscanf(ar[1], "0x%x") || ar[1]);
+		el.value |= Number(ar[1]);
 	} else {
-		o.form[ar[0]].value &= ~(await api.sscanf(ar[1], "0x%x") || ar[1]);
+		el.value &= ~Number(ar[1]);
 	}
-	var res = /^(Tab|Tree|View|Conf)/.exec(ar[0]);
-	if (res) {
-		MainWindow.g_.OptionsWindow.g_Chg[res[1]] = true;
-		MainWindow.g_.OptionsWindow.g_bChanged = true;
-	}
+	FireEvent(el, "change");
 }
 
 function SetValue(n, v) {
@@ -304,7 +298,7 @@ function ChooseColor1(o) {
 function ChooseColor2(o) {
 	setTimeout(async function () {
 		var o2 = o.form[o.id.replace("Color_", "")];
-		var c = await ChooseColor(GetWinColor(o2.value || o2.placeholder));
+		var c = await ChooseColor(await GetWinColor(o2.value || o2.placeholder));
 		if (isFinite(c)) {
 			c = GetWebColor(c);
 			o2.value = c;
@@ -1065,7 +1059,6 @@ async function LoadAddons() {
 		}
 	}
 	api.FindClose(hFind);
-
 	var table = document.getElementById("Addons");
 	table.ondragover = Over5;
 	table.ondrop = Drop5;
@@ -1076,13 +1069,28 @@ async function LoadAddons() {
 		var items = await root.childNodes;
 		if (items) {
 			var nLen = await GetLength(items);
+			var sorted = document.getElementById("SortedAddons");
+			var tcell = [];
+			var scell = [];
 			for (var i = 0; i < nLen; ++i) {
-				var item = await items[i];
-				var Id = await item.nodeName;
-				if (AddonId[Id]) {
-					AddAddon(table, Id, GetNum(await item.getAttribute("Enabled")));
-					delete AddonId[Id];
+				tcell[i] = table.insertRow().insertCell();
+				if (sorted.rows.length) {
+					scell[i] = sorted.insertRow().insertCell();
 				}
+			}
+			for (var i = 0; i < nLen; ++i) {
+				Promise.all([i, items[i].nodeName, items[i].getAttribute("Enabled")]).then(function (r) {
+					var i = r[0];
+					var Id = r[1];
+					if (AddonId[Id]) {
+						var bEnable = GetNum(r[2]);
+						SetAddon(Id, bEnable, tcell[i]);
+						if (sorted.rows.length) {
+							SetAddon(Id, bEnable, scell[i], "Sorted_");
+						}
+						delete AddonId[Id];
+					}
+				});
 			}
 		}
 	}
@@ -1335,6 +1343,7 @@ async function OkOptions() {
 	await MainWindow.RunEvent1("ConfigChanged", "Config");
 
 	te.Data.bReload = true;
+	MainWindow.g_.dlgs.Options = void 0;
 	WebBrowser.Close();
 }
 
@@ -1344,6 +1353,7 @@ async function CancelOptions() {
 		await SaveAddons();
 		te.Data.bReload = true;
 	}
+	MainWindow.g_.dlgs.Options = void 0;
 	WebBrowser.Close();
 }
 
@@ -1352,9 +1362,11 @@ async function ContinueOptions() {
 }
 
 InitOptions = async function () {
-	await ApplyLang(document);
-	document.getElementById("tab1_3").innerHTML = await api.sprintf(99, await GetText("Get %s"), await GetText("Icon"));
-	document.title = await GetText("Options") + " - " + TITLE;
+	ApplyLang(document);
+	(async function () {
+		document.getElementById("tab1_3").innerHTML = await api.sprintf(99, await GetText("Get %s"), await GetText("Icon"));
+		document.title = await GetText("Options") + " - " + TITLE;
+	})();
 	MainWindow.g_.OptionsWindow = $;
 	var InstallPath = await te.Data.Installed;
 	document.F.ButtonInitConfig.disabled = (InstallPath == await te.Data.DataFolder) | !await $.fso.FolderExists(BuildPath(InstallPath, "layout"));
@@ -1404,7 +1416,7 @@ InitOptions = async function () {
 		}
 		SetOptions(OkOptions, CancelOptions, ContinueOptions);
 	};
-	document.body.style.visibility = "";
+	document.body.style.display = "";
 }
 
 OpenIcon = function (o) {
@@ -1517,9 +1529,13 @@ InitDialog = async function () {
 				for (var bFind2 = hFind != INVALID_HANDLE_VALUE; bFind2; bFind2 = await api.FindNextFile(hFind2, wfd)) {
 					arfn.push(await wfd.cFileName);
 				}
-				arfn.sort(async function (a, b) {
-					return await api.StrCmpLogical(a, b);
-				});
+				if (window.chrome) {
+					arfn.sort();
+				} else {
+					arfn.sort(function (a, b) {
+						return api.StrCmpLogical(a, b);
+					});
+				}
 				for (var i = 0; i < arfn.length; ++i) {
 					var src = ["icon:" + GetFileName(path2), arfn[i].replace(/\.png$/i, "")].join(",");
 					s.push('<img src="', BuildPath(path2, arfn[i]), '" class="button" onclick="SelectIcon(this)" onmouseover="MouseOver(this)" onmouseout="MouseOut()" title="', src, '" style="max-height: 24pt"> ');
@@ -1578,10 +1594,10 @@ InitDialog = async function () {
 				document.F.ButtonOk.disabled = !document.F.path.value;
 			}, 99);
 			var key = e.keyCode;
-			if ((key == VK_RETURN || /^Enter/i.test(e.key)) && document.F.path.value) {
+			if ((key == VK_RETURN || window.chrome && /^Enter/i.test(e.key)) && document.F.path.value) {
 				SetResult(1);
 			}
-			if (key == VK_ESCAPE || /^Esc/i.test(e.key)) {
+			if (key == VK_ESCAPE || window.chrome && /^Esc/i.test(e.key)) {
 				SetResult(2);
 			}
 			return true;
@@ -1631,22 +1647,32 @@ InitDialog = async function () {
 		s.push('<br><a href="#" class="link" onclick="Run(1, this)">', BuildPath(await te.Data.DataFolder, "config"), '</a><br>');
 		s.push('<br><label>Information</label><input type="text" value="', await AboutTE(3), '" style="width: 100%" onclick="this.select()" readonly><br>');
 		var root = await te.Data.Addons.documentElement;
+		var promise = [];
 		if (root) {
-			var ar = [];
 			var items = await root.childNodes;
 			if (items) {
-				for (var i = 0; i < await GetLength(items); ++i) {
-					if (GetNum(await items[i].getAttribute("Enabled"))) {
-						ar.push(await items[i].nodeName);
-					}
+				var nLen = await GetLength(items);
+				for (var i = 0; i < nLen; ++i) {
+					promise.push(items[i].getAttribute("Enabled"), items[i].nodeName);
 				}
 			}
-			s.push('<br><label>Add-ons</label><input type="text" value="', ar.join(","), '" style="width: 100%" onclick="this.select()"><br>');
+			s.push('<br><label>Add-ons</label><input id="UsedAddons" type="text" style="width: 100%" onclick="this.select()"><br>');
 		}
 		s.push('<br><input type="button" value="Visit website" onclick="Run(2)">');
 		s.push('&nbsp;<input type="button" value="Check for updates" onclick="Run(3)">');
 		s.push('</td></tr></table>');
 		document.getElementById("Content").innerHTML = s.join("");
+		if (promise.length) {
+			Promise.all(promise).then(function (r) {
+				var ar = [];
+				for (var i = 0; i < r.length; i += 2) {
+					if (GetNum(r[i])) {
+						ar.push(r[i + 1]);
+					}
+				}
+				document.getElementById("UsedAddons").value = ar.join(",");
+			});
+		}
 		document.F.ButtonOk.disabled = false;
 		document.getElementById("buttonCancel").style.display = "none";
 
@@ -1673,7 +1699,7 @@ InitDialog = async function () {
 	});
 	await ApplyLang(document);
 	DialogResize();
-	document.body.style.visibility = "";
+	document.body.style.display = "";
 }
 
 MouseDown = async function (e) {
@@ -1749,8 +1775,8 @@ MouseDbl = function () {
 	return false;
 }
 
-MouseWheel = async function () {
-	returnValue = await GetGestureKey() + await GetGestureButton() + (event.wheelDelta > 0 ? "8" : "9");
+MouseWheel = async function (ev) {
+	returnValue = await GetGestureKey() + await GetGestureButton() + (ev.wheelDelta > 0 ? "8" : "9");
 	document.F.q.value = returnValue;
 	document.F.ButtonOk.disabled = false;
 	return false;
@@ -1950,15 +1976,21 @@ InitLocation = async function () {
 
 	if (await WebBrowser.OnClose) {
 		g_Inline = true;
+		var cel = document.getElementsByTagName("input");
+		for (var i = cel.length; i-- > 0;) {
+			if (/^ok$|^cancel$/.test(cel[i].className)) {
+				cel[i].style.display = "none";
+			}
+		}
 	} else {
 		WebBrowser.OnClose = async function (WB) {
 			await SetOptions(TEOk, null, ContinueOptions);
 			if (g_nResult != 4) {
+				FireEvent(window, "beforeunload");
 				WB.Close();
 			}
 			g_nResult = 0;
 		};
-		document.getElementById("buttons").style.display = "block";
 	}
 	if (item) {
 		InitColor1(item);
@@ -2180,6 +2212,7 @@ async function InitAddonOptions(bFlag) {
 		WebBrowser.OnClose = async function (WB) {
 			await SetOptions(TEOk, null, ContinueOptions);
 			if (g_nResult != 4) {
+				FireEvent(window, "beforeunload");
 				WB.Close();
 			}
 			g_nResult = 0;
@@ -2200,8 +2233,14 @@ function SetOnChangeHandler() {
 		if (o) {
 			for (var i = o.length; i--;) {
 				if ((o[i].name || o[i].id) && o[i].name != "List" && !/^_/.test(o[i].id)) {
-					AddEventEx(o[i], "change", function () {
+					AddEventEx(o[i], "change", function (e) {
 						g_bChanged = true;
+						if (e.srcElement) {
+							var res = /^(Tab|Tree|View|Conf)/.exec(e.srcElement.name || e.srcElement.id);
+							if (res) {
+								g_Chg[res[1]] = true;
+							}
+						}
 					});
 				}
 			}
@@ -2341,18 +2380,19 @@ function AddonsSearch() {
 }
 
 function AddonsKeyDown(e) {
-	if (e.keyCode == VK_RETURN || /^Enter/i.test(e.key)) {
+	if (e.keyCode == VK_RETURN || window.chrome && /^Enter/i.test(e.key)) {
 		AddonsSearch();
 	}
 	return true;
 }
 
 async function AddonsList(xhr2) {
+	debugger;
 	if (xmlAddons) {
 		return;
 	}
-	if (xhr2) {
-		xhr = xhr2;
+	if (await xhr2) {
+		xhr = await xhr2;
 	}
 	var xml = await xhr.get_responseXML ? await xhr.get_responseXML() : await xhr.responseXML;
 	if (xml) {
@@ -2526,13 +2566,13 @@ async function Install(o, bUpdate) {
 async function Install2(xhr, url, o) {
 	var Id = o.title.replace(/_.*$/, "");
 	var file = o.title.replace(/\./, "") + '.zip';
-	var temp = BuildPath(await wsh.ExpandEnvironmentStrings("%TEMP%"), "tablacus");
+	var temp = BuildPath(await ExtractMacro(await te, "%TEMP%"), "tablacus");
 	await CreateFolder(temp);
 	var dest = BuildPath(temp, Id);
 	await DeleteItem(dest);
 	var hr = await (window.chrome ? window : MainWindow).Extract(BuildPath(temp, file), temp, xhr);
 	if (hr) {
-		MessageBox([api.LoadString(hShell32, 4228).replace(/^\t/, "").replace("%d", await api.sprintf(99, "0x%08x", hr)), await GetText("Extract"), file].join("\n\n"), TITLE, MB_OK | MB_ICONSTOP);
+		MessageBox([await api.LoadString(hShell32, 4228).replace(/^\t/, "").replace("%d", await api.sprintf(99, "0x%08x", hr)), await GetText("Extract"), file].join("\n\n"), TITLE, MB_OK | MB_ICONSTOP);
 		return;
 	}
 	var configxml = dest + "\\config.xml";
@@ -2553,7 +2593,7 @@ async function Install2(xhr, url, o) {
 }
 
 function IconsKeyDown(e) {
-	if (e.keyCode == VK_RETURN || /^Enter/i.test(e.key)) {
+	if (e.keyCode == VK_RETURN || window.chrome && /^Enter/i.test(e.key)) {
 		IconPacksList();
 	}
 	return true;

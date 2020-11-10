@@ -51,6 +51,7 @@ typedef HRESULT (WINAPI * LPFNGetAvailableCoreWebView2BrowserVersionString)(PCWS
 
 // Base Object
 class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject, public IServiceProvider,
+	public IDropTarget,
 	public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
 	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
 	public ICoreWebView2ExecuteScriptCompletedHandler,
@@ -164,6 +165,11 @@ public:
 	STDMETHODIMP UIDeactivate(void);
 	STDMETHODIMP SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect);
 	STDMETHODIMP ReactivateAndUndo(void);
+	//IDropTarget
+	STDMETHODIMP DragEnter(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
+	STDMETHODIMP DragOver(DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
+	STDMETHODIMP DragLeave();
+	STDMETHODIMP Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
 	//IServiceProvider
 	STDMETHODIMP QueryService(REFGUID guidService, REFIID riid, void **ppv);
 	//ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
@@ -182,8 +188,6 @@ public:
 	CteBase();
 	~CteBase();
 private:
-	LONG		m_cRef;
-
 	IOleClientSite *m_pOleClientSite;
 	IDispatch *m_pdisp;
 	HWND m_hwndParent;
@@ -195,6 +199,7 @@ private:
 	BSTR m_bstrPath;
 
 	IDispatch	*m_pDocument;
+	LONG		m_cRef;
 };
 
 // Class Factory

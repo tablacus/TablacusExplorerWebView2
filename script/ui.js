@@ -124,69 +124,32 @@ InitUI = async function () {
 	UI = await api.CreateObject("Object");
 	UI.Addons = await api.CreateObject("Object");
 
-	UI.OpenHttpRequest = OpenHttpRequest = async function (url, alt, fn, arg) {
-		var xhr = await createHttpRequest();
-		var fnLoaded = async function () {
-			if (await arg && await arg.pcRef) {
-				arg.pcRef[0] = await arg.pcRef[0] - 1;
-			}
-			if (await xhr.status == 200) {
-				if (fn) {
-					fn(xhr, url, await arg);
-					fn = void 0;
-				}
-				return;
-			}
-			if (/^http/.test(alt)) {
-				UI.OpenHttpRequest(/^https/.test(url) && alt == "http" ? url.replace(/^https/, alt) : alt, '', fn, await arg);
-				return;
-			}
-			ShowXHRError(url, await xhr.status);
-		}
-		xhr.onload = fnLoaded;
-		xhr.onreadystatechange = async function () {
-			if (await xhr.readyState == 4) {
-				fnLoaded();
-			}
-		}
-		if (/ml$/i.test(url)) {
-			url += "?" + Math.floor(new Date().getTime() / 60000);
-		}
-		if (await arg && await arg.pcRef) {
-			arg.pcRef[0] = await arg.pcRef[0] + 1;
-		}
-		if (window.chrome && /\.zip$|\.nupkg$/i.test(url)) {
-			xhr.responseType = "blob";
-		}
-		xhr.open("GET", url, true);
-		xhr.send();
-	}
-
-	UI.ReloadCustomize = ReloadCustomize = async function () {
-		te.Data.bReload = false;
-		await CloseSubWindows();
-		await Finalize();
-		te.Reload();
-		return S_OK;
-	}
-
 	UI.RunEvent = async function () {
 		var args = Array.apply(null, arguments);
 		var s = args.shift();
-		if (window.chrome) {
-			s = "(async () => {" + s + "\n})();";
-		} else {
-			s = RemoveAsync(s);
+		var fn = new Function(window.chrome ? "(async () => {" + s + "\n})();" : RemoveAsync(s));
+		fn.apply(fn, args);
+	}
+
+	UI.ExecJavaScript = function (Ctrl, s) {
+		var fn = new Function(window.chrome ? "(async () => {" + s + "\n})();" : RemoveAsync(s));
+		fn.apply(fn, arguments);
+	}
+
+	UI.Invoke = function () {
+		var args = Array.apply(null, arguments);
+		var ar = args.shift().split(".");
+		var fn = window;
+		var s;
+		while (s = ar.shift()) {
+			fn = fn[s];
 		}
-		var fn = new Function(s);
 		fn.apply(fn, args);
 	}
 
 	UI.setTimeoutAsync = async function (fn, tm, a, b, c, d) {
 		setTimeout(fn, tm, a, b, c, d);
 	}
-
-	UI.clearTimeout = clearTimeout;
 
 	UI.ShowError = function (cb, e, s) {
 		setTimeout(cb, 99, cb, e, s);
@@ -199,47 +162,14 @@ InitUI = async function () {
 		}
 	}
 
-	UI.BlurId = BlurId = function (Id) {
-		document.getElementById(Id).blur();
-	}
-
 	UI.ShowOptions = async function (opt) {
 		g_.dlgs.Options = await ShowDialog("options.html", opt);
-	}
-
-	UI.Extract = Extract = async function (Src, Dest, xhr) {
-		var hr;
-		if (xhr) {
-			if (window.chrome && await xhr.response) {
-				xhr = await readAsDataURL(xhr.response);
-			}
-			hr = await DownloadFile(xhr, Src);
-			if (hr) {
-				return hr;
-			}
-		}
-		var eo = await MainWindow.eventTE.extract;
-		var nLen = await GetLength(eo);
-		for (var i = 0; i < nLen; ++i) {
-			var fn = await eo[i];
-			try {
-				fn.apply(Src, Dest);
-			} catch (e) {
-				ShowError(e, "Extract", i);
-			}
-		}
-		return await api.Extract(BuildPath(system32, "zipfldr.dll"), "{E88DCCE0-B7B3-11d1-A9F0-00AA0060FA31}", Src, Dest);
-	}
-
-	UI.DownloadFile = DownloadFile = async function (url, fn) {
-		var hr = await MainWindow.RunEvent4("DownloadFile", url, fn);
-		return hr != null ? hr : await api.URLDownloadToFile(null, url, fn);
 	}
 
 	UI.CheckUpdate2 = async function (xhr, url, arg1) {
 		var arg = await api.CreateObject("Object");
 		var Text = await xhr.get_responseText ? await xhr.get_responseText() : xhr.responseText;
-		var json = window.JSON ? JSON.parse(Text) : api.GetScriptDispatch("function fn () { return " + Text + "}", "JScript", {}).fn();
+		var json = JSON.parse(Text);
 		if (json.assets && json.assets[0]) {
 			arg.size = json.assets[0].size / 1024;
 			arg.url = json.assets[0].browser_download_url;
@@ -329,14 +259,6 @@ InitUI = async function () {
 		}
 	}
 
-	UI.CloseWindow = CloseWindow = async function () {
-		if (window.chrome) {
-			api.PostMessage(await GetTopWindow(), WM_CLOSE, 0, 0);
-			return;
-		}
-		window.close();
-	}
-
 	UI.Autocomplete = async function (s, path) {
 		var dl = document.getElementById("AddressList");
 		while (dl.lastChild) {
@@ -353,7 +275,74 @@ InitUI = async function () {
 	}
 };
 
-function readAsDataURL(blob) {
+OpenHttpRequest = async function (url, alt, fn, arg) {
+	var xhr = await createHttpRequest();
+	var fnLoaded = async function () {
+		if (fn) {
+			if (await arg && await arg.pcRef) {
+				arg.pcRef[0] = await arg.pcRef[0] - 1;
+			}
+			if (await xhr.status == 200) {
+				fn(xhr, url, await arg);
+				fn = void 0;
+				return;
+			}
+			if (/^http/.test(alt)) {
+				UI.OpenHttpRequest(/^https/.test(url) && alt == "http" ? url.replace(/^https/, alt) : alt, '', fn, await arg);
+				return;
+			}
+			ShowXHRError(url, await xhr.status);
+		}
+	}
+	xhr.onload = fnLoaded;
+	xhr.onreadystatechange = async function () {
+		if (await xhr.readyState == 4) {
+			fnLoaded();
+		}
+	}
+	if (/ml$/i.test(url)) {
+		url += "?" + Math.floor(new Date().getTime() / 60000);
+	}
+	if (await arg && await arg.pcRef) {
+		arg.pcRef[0] = await arg.pcRef[0] + 1;
+	}
+	if (window.chrome && /\.zip$|\.nupkg$/i.test(url)) {
+		xhr.responseType = "blob";
+	}
+	xhr.open("GET", url, true);
+	xhr.send();
+}
+
+Extract = async function (Src, Dest, xhr) {
+	var hr;
+	if (xhr) {
+		if (window.chrome && await xhr.response) {
+			xhr = await ReadAsDataURL(xhr.response);
+		}
+		hr = await DownloadFile(xhr, Src);
+		if (hr) {
+			return hr;
+		}
+	}
+	var eo = await MainWindow.eventTE.extract;
+	var nLen = await GetLength(eo);
+	for (var i = 0; i < nLen; ++i) {
+		var fn = await eo[i];
+		try {
+			fn.apply(Src, Dest);
+		} catch (e) {
+			ShowError(e, "Extract", i);
+		}
+	}
+	return await api.Extract(BuildPath(system32, "zipfldr.dll"), "{E88DCCE0-B7B3-11d1-A9F0-00AA0060FA31}", Src, Dest);
+}
+
+DownloadFile = async function (url, fn) {
+	var hr = await MainWindow.RunEvent4("DownloadFile", url, fn);
+	return hr != null ? hr : await api.URLDownloadToFile(null, url, fn);
+}
+
+ReadAsDataURL = function (blob) {
 	return new Promise(function (resolve, reject) {
 		var reader = new FileReader();
 		reader.onload = function () {
@@ -407,7 +396,8 @@ LoadScripts = async function (js1, js2, cb) {
 			return to;
 		}
 		document.documentMode = (/Edg\/(\d+)/.test(navigator.appVersion) ? RegExp.$1 : 12);
-		screen.deviceYDPI = window.deviceYDPI;
+		screen.deviceYDPI = parent.deviceYDPI;
+		ui_.Zoom = parent.deviceYDPI / 96;
 		await CopyObj($, window, ["te", "api", "chrome", "document", "UI", "MainWindow"]);
 		$.location = await CopyObj(null, location, ["hash", "href"]);
 		$.navigator = await CopyObj(null, navigator, ["appVersion", "language"]);
@@ -415,13 +405,14 @@ LoadScripts = async function (js1, js2, cb) {
 		var o = await api.CreateObject("Object");
 		o.window = $;
 		$.$JS = await api.GetScriptDispatch(s.join(""), "JScript", o);
-		await CopyObj(window, $, ["g_", "Common", "eventTE", "eventTA", "Threads", "SimpleDB", "BasicDB;"]);
+		await CopyObj(window, $, ["g_", "Common", "Sync", "Threads"]);
 		await CopyObj(window, $, arFN);
 		var doc = await api.CreateObject("Object");
 		doc.parentWindow = $;
 		WebBrowser.Document = doc;
 	} else {
 		$ = window;
+		ui_.Zoom = 1;
 	}
 	Addons = {
 		"_stack": await api.CreateObject("Array")
@@ -429,33 +420,34 @@ LoadScripts = async function (js1, js2, cb) {
 	LoadScript(js1.concat(js2), cb);
 };
 
+async function _InvokeMethod() {
+	var args;
+	var ar = await api.ObjGetI(te, "fn");
+	while (args = await ar.shift()) {
+		var fn = args.shift();
+		await fn.apply(fn, args);
+	}
+}
+
 ApplyLangTag = async function (o) {
 	if (o) {
 		for (var i = 0; i < o.length; ++i) {
-			var s, s1;
-			if (s = o[i].innerHTML) {
-				var ar = s.split("<");
-				var re1 = /^([^>]*>\s*)(.+)(\s*)$/;
-				var re2 = /^(\s*)(.+)(\s*)$/;
-				for (var j = ar.length; j-- > 0;) {
-					var res = re1.exec(ar[j]) || re2.exec(ar[j])
-					if (res) {
-						ar[j] = res[1] + amp2ul(await GetTextR(res[2].replace(/&amp;/ig, "&"))) + res[3];
+			(async function (el) {
+				var s;
+				if (s = el.childNodes) {
+					for (var j = s.length; j-- > 0;) {
+						if (!s[j].tagName) {
+							s[j].data = amp2ul(await GetTextR(s[j].data.replace(/&amp;/ig, "&")));
+						}
 					}
 				}
-				s1 = ar.join("<");
-				if (s != s1) {
-					o[i].innerHTML = s1;
+				if (s = el.title) {
+					el.title = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
 				}
-			}
-			s = o[i].title;
-			if (s) {
-				o[i].title = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
-			}
-			s = o[i].alt;
-			if (s) {
-				o[i].alt = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
-			}
+				if (s = el.alt) {
+					el.alt = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
+				}
+			})(o[i]);
 		}
 	}
 }
@@ -468,12 +460,12 @@ ApplyLang = async function (doc) {
 		doc.body.style.fontSize = Math.abs(await MainWindow.DefaultFont.lfHeight) + "px";
 		doc.body.style.fontWeight = await MainWindow.DefaultFont.lfWeight;
 	}
-	await ApplyLangTag(doc.getElementsByTagName("label"));
-	await ApplyLangTag(doc.getElementsByTagName("button"));
-	await ApplyLangTag(doc.getElementsByTagName("li"));
+	ApplyLangTag(doc.getElementsByTagName("label"));
+	ApplyLangTag(doc.getElementsByTagName("button"));
+	ApplyLangTag(doc.getElementsByTagName("li"));
 	o = doc.getElementsByTagName("a");
 	if (o) {
-		await ApplyLangTag(o);
+		ApplyLangTag(o);
 		for (i = o.length; i--;) {
 			if (o[i].className == "treebutton" && o[i].innerHTML == "") {
 				o[i].innerHTML = BUTTONS.opened;
@@ -482,48 +474,53 @@ ApplyLang = async function (doc) {
 	}
 	o = doc.getElementsByTagName("input");
 	if (o) {
-		await ApplyLangTag(o);
+		ApplyLangTag(o);
 		for (i = o.length; i--;) {
-			if (!h && o[i].type == "text") {
-				h = o[i].offsetHeight;
-			}
-			if (s = o[i].placeholder) {
-				o[i].placeholder = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
-			}
-			if (o[i].type == "button") {
-				if (s = o[i].value) {
-					o[i].value = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
+			(async function (el) {
+				if (!h && SameText(el.type, "text")) {
+					h = el.offsetHeight;
 				}
-			}
-			if (s = await ImgBase64(o[i], 0)) {
-				o[i].src = s;
-				if (o[i].type == "text") {
-					o[i].style.backgroundImage = "url('" + s + "')";
+				if (s = el.placeholder) {
+					el.placeholder = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
 				}
-			}
+				if (SameText(el.type, "button")) {
+					if (s = el.value) {
+						el.value = (await GetTextR(s)).replace(/\(&\w\)|&/, "");
+					}
+				}
+				if (s = await ImgBase64(el, 0)) {
+					el.src = s;
+					if (SameText(el.type, "text")) {
+						el.style.backgroundImage = "url('" + s + "')";
+					}
+				}
+			})(o[i]);
 		}
 	}
 	o = doc.getElementsByTagName("img");
 	if (o) {
 		ApplyLangTag(o);
 		for (i = o.length; i--;) {
-			var s = await ImgBase64(o[i], 0);
-			if (s) {
-				o[i].src = s;
-			}
-			if (!o[i].ondragstart) {
-				o[i].draggable = false;
-			}
+			(async function (el) {
+				var s = await ImgBase64(el, 0);
+				if (s) {
+					el.src = s;
+				}
+				if (!el.ondragstart) {
+					el.draggable = false;
+				}
+			})(o[i]);
 		}
 	}
 	o = doc.getElementsByTagName("select");
 	if (o) {
 		for (i = o.length; i--;) {
-			o[i].title = delamp(await GetTextR(o[i].title));
-			for (var j = 0; j < o[i].length; ++j) {
-				var s = await GetTextR(o[i][j].text);
-				o[i][j].text = s.replace(/^\n/, "").replace(/\n$/, "");
-			}
+			(async function (el) {
+				el.title = delamp(await GetTextR(el.title));
+				for (var j = 0; j < el.length; ++j) {
+					el[j].text = (await GetTextR(el[j].text)).replace(/^\n/, "").replace(/\n$/, "");
+				}
+			})(o[i]);
 		}
 	}
 	o = doc.getElementsByTagName("textarea");
@@ -580,9 +577,8 @@ GetPos = function (o, bScreen, bAbs, bPanel, bBottom) {
 		bBottom = bScreen & 8;
 		bScreen &= 1;
 	}
-	var z = window.deviceYDPI ? deviceYDPI / 96 : 1;
-	var x = bScreen ? screenLeft * z : 0;
-	var y = bScreen ? screenTop * z : 0;
+	var x = bScreen ? screenLeft * ui_.Zoom : 0;
+	var y = bScreen ? screenTop * ui_.Zoom : 0;
 	if (bBottom) {
 		y += o.offsetHeight;
 	}
@@ -608,6 +604,14 @@ GetTopWindow = async function (hwnd) {
 		hwnd = hwnd1;
 	}
 	return hwnd;
+}
+
+CloseWindow = async function () {
+	if (window.chrome) {
+		api.PostMessage(await GetTopWindow(), WM_CLOSE, 0, 0);
+		return;
+	}
+	window.close();
 }
 
 CloseSubWindows = async function () {
@@ -656,9 +660,6 @@ MouseOut = function (s) {
 }
 
 InsertTab = function (e) {
-	if (!e) {
-		e = event;
-	}
 	var ot = e.srcElement;
 	if (e.keyCode == VK_TAB) {
 		ot.focus();
@@ -704,16 +705,19 @@ GetFolderViewEx = async function (Ctrl, pt, bStrict) {
 
 AddEventEx(window, "load", function () {
 	document.body.onselectstart = DetectProcessTag;
-	if (!window.chrome) {
-		document.body.oncontextmenu = DetectProcessTag;
-	}
 	if (window.chrome) {
-		document.body.addEventListener('mousewheel', function (e) {
-			if (e.ctrlKey) {
-				e.preventDefault();
+		document.body.addEventListener('mousewheel', function (ev) {
+			if (ev.ctrlKey) {
+				ev.preventDefault();
 			}
 		}, { passive: false });
+		document.body.addEventListener('keydown', function (ev) {
+			if ("F5" === ev.key) {
+				ev.preventDefault();
+			}
+		}, false);
 	} else {
+		document.body.oncontextmenu = DetectProcessTag;
 		document.body.onmousewheel = function (e) {
 			return !e.ctrlKey;
 		};
@@ -803,6 +807,18 @@ LoadAddon = async function (ext, Id, arError, param) {
 	return r;
 }
 
+ReloadCustomize = async function () {
+	te.Data.bReload = false;
+	await CloseSubWindows();
+	await Finalize();
+	te.Reload();
+	return S_OK;
+}
+
+BlurId = function (Id) {
+	document.getElementById(Id).blur();
+}
+
 //Options
 AddonOptions = async function (Id, fn, Data, bNew) {
 	await LoadLang2(BuildPath("addons", Id, "lang", await GetLangId() + ".xml"));
@@ -847,16 +863,18 @@ AddonOptions = async function (Id, fn, Data, bNew) {
 			sFeatures = 'Width: 640; Height: 480';
 		}
 		try {
-			var dlg = MainWindow.g_.dlgs[Id];
+			var dlg = await MainWindow.g_.dlgs[Id];
 			if (dlg) {
-				dlg.Focus();
-				return;
+				if (await api.IsWindowVisible(await dlg.Document.parentWindow.WebBrowser.hwnd)) {
+					dlg.Focus();
+					return;
+				}
 			}
 		} catch (e) {
-			delete MainWindow.g_.dlgs[Id];
+			MainWindow.g_.dlgs[Id] = void 0;
 		}
 		opt = await api.CreateObject("Object");
-		opt.MainWindow = await MainWindow;
+		opt.MainWindow = await $;
 		opt.Data = Data;
 		opt.event = await api.CreateObject("Object");
 		if (fn) {
@@ -874,9 +892,7 @@ AddonOptions = async function (Id, fn, Data, bNew) {
 				opt.height = res[1] - 0;
 			}
 		}
-		opt.event.onbeforeunload = function () {
-			MainWindow.g_.dlgs[Id] = void 0;
-		}
+		opt.event.onbeforeunload = "MainWindow.g_.dlgs['" +Id +"'] = void 0;";
 		MainWindow.g_.dlgs[Id] = await ShowDialog(sURL, opt);
 		return;
 	}
@@ -1066,32 +1082,47 @@ ClearAutocomplete = function () {
 	g_.Autocomplete.Path = "";
 }
 
-if (!window.JSON) {
-	JSON = {
-		parse: function (s) {
-			return new Function('return ' + (s || {}))();
-		},
-		stringify: function (o) {
-			var ar = [];
-			if (Array.isArray(o)) {
-				for (var i = 0; i < o.length; ++i) {
-					if ("object" === typeof o[i]) {
-						ar.push('"' + this.stringify(o[i]) + '"');
-					} else {
-						ar.push('"' + o[i] + '"');
+GetXmlItems = window.chrome ? async function (items) {
+	return JSON.parse(await XmlItems2Json(items));
+} : function (items) {
+	var ar = [];
+	if (items) {
+		for (var i = 0; i < items.length; ++i) {
+			var item = items[i];
+			if (item) {
+				var o = {};
+				if (item.text) {
+					o.text = item.text;
+				}
+				var attrs = item.attributes;
+				if (attrs) {
+					for (var j = 0; j < attrs.length; ++j) {
+						o[attrs[j].name] = attrs[j].value;
 					}
 				}
-				return '[' + ar.join(",") + "]";
+				ar.push(o);
 			}
-			for (var n in o) {
-				if ("object" === typeof o[n]) {
-					ar.push('"' + n + '":"' + this.stringify(o[n]) + '"');
-				} else {
-					ar.push('"' + n + '":"' + o[n] + '"');
-				}
-			}
-			return '{' + ar.join(",") + "}";
 		}
 	}
+	return ar;
 }
 
+if (window.chrome) {
+	GetAddonElement = async function (id) {
+		var item = await $.GetAddonElement(id);
+		return {
+			item: item,
+			db: JSON.parse(await XmlItem2Json(item)),
+			get attributes() {
+				return this.db.keys();
+			},
+			getAttribute: function (s) {
+				return this.db[s];
+			},
+			setAttribute: function (s, v) {
+				this.db[s] = v;
+				item.setAttribute(s, v);
+			}
+		};
+	}
+}
