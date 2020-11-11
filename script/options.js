@@ -1403,6 +1403,7 @@ InitOptions = async function () {
 		ClickButton(i, false);
 	}
 	SetTab(await dialogArguments.Data);
+	document.F.style.display = "";
 	WebBrowser.OnClose = async function (WB) {
 		g_bChanged |= g_Chg.Addons || g_Chg.Menus || g_Chg.Tab || g_Chg.Tree || g_Chg.View;
 		if (!g_bChanged) {
@@ -1416,7 +1417,6 @@ InitOptions = async function () {
 		}
 		SetOptions(OkOptions, CancelOptions, ContinueOptions);
 	};
-	document.body.style.display = "";
 }
 
 OpenIcon = function (o) {
@@ -1698,8 +1698,8 @@ InitDialog = async function () {
 		g_tidResize = setTimeout(DialogResize, 500);
 	});
 	await ApplyLang(document);
+	document.F.style.display = "";
 	DialogResize();
-	document.body.style.display = "";
 }
 
 MouseDown = async function (e) {
@@ -1996,6 +1996,7 @@ InitLocation = async function () {
 		InitColor1(item);
 	}
 	ClickTab(null, 1);
+	document.getElementById("P").style.display = "";
 }
 
 function SetAttrib(item, n, s) {

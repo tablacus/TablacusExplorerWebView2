@@ -403,6 +403,7 @@ AddEventEx(document, "FullscreenChange", function () {
 	FullscreenChanged(document.fullscreenElement != null);
 });
 
+document.F.style.display = "none";
 Init = async function () {
 	te.Data.MainWindow = $;
 	UI.OnLoad();
@@ -416,5 +417,6 @@ Init = async function () {
 	await ApplyLang(document);
 	await ArrangeAddons();
 	await InitWindow();
+	document.F.style.display = "";
 	WebBrowser.DropMode = 1;
 }

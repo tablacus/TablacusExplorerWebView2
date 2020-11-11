@@ -615,8 +615,7 @@ STDMETHODIMP CteBase::Navigate(BSTR URL, VARIANT *Flags, VARIANT *TargetFrameNam
 STDMETHODIMP CteBase::Refresh(void)
 {
 	if (m_webviewWindow) {
-		m_webviewWindow->ExecuteScript(L"location.reload();", this);
-		return S_OK;
+		return m_webviewWindow->Reload();
 	}
 	return E_FAIL;
 }
@@ -760,6 +759,7 @@ STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 		BSTR bs = ::SysAllocString(L"_InvokeMethod();");
 		m_webviewWindow->ExecuteScript(bs, this);
 		teSysFreeString(&bs);
+		return S_OK;
 	}
 	if (lstrcmpi(Property, L"version") == 0) {
 		teSetLong(pvtValue, VER_Y * 1000000 + VER_M * 10000 + VER_D * 100 + VER_Z);
