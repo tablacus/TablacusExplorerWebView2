@@ -51,7 +51,8 @@ InitUI = async function () {
 	if (await api.SHTestTokenMembership(null, 0x220) && WINVER >= 0x600) {
 		TITLE += ' [' + (await api.LoadString(hShell32, 25167) || "Admin").replace(/;.*$/, "") + ']';
 	}
-
+	ui_.TEPath = await api.GetModuleFileName(null);
+	ui_.Installed = GetParentFolderName(ui_.TEPath);
 	ui_.DoubleClickTime = await sha.GetSystemInformation("DoubleClickTime");
 	var arg = await te.Arguments;
 	if (arg) {
@@ -199,7 +200,7 @@ InitUI = async function () {
 		}
 		arg.temp = BuildPath(await wsh.ExpandEnvironmentStrings("%TEMP%"), "tablacus");
 		await CreateFolder2(await arg.temp);
-		arg.InstalledFolder = await te.Data.Installed;
+		arg.InstalledFolder = ui_.Installed;
 		arg.zipfile = BuildPath(await arg.temp, await arg.file);
 		arg.temp = await arg.temp + "\\explorer";
 		await DeleteItem(await arg.temp);
@@ -227,7 +228,7 @@ InitUI = async function () {
 		}
 		for (var i = 32; i <= 64; i += 32) {
 			te_exe = await arg.temp + '\\te' + i + '.exe';
-			var te_old = BuildPath(await te.Data.Installed, 'te' + i + '.exe');
+			var te_old = BuildPath(ui_.Installed, 'te' + i + '.exe');
 			if (!await $.fso.FileExists(te_old) || await $.fso.GetFileVersion(te_exe) == await $.fso.GetFileVersion(te_old)) {
 				arDel.push(te_exe);
 			}
@@ -746,7 +747,7 @@ GetImgTag = async function (o, h) {
 		var ar = ['<img'];
 		for (var n in o) {
 			if (o[n]) {
-				ar.push(' ', n, '="', EncodeSC(await GetText(await api.PathUnquoteSpaces(o[n]))), '"');
+				ar.push(' ', n, '="', EncodeSC(StripAmp(await GetText(await api.PathUnquoteSpaces(o[n])))), '"');
 			}
 		}
 		if (h) {
@@ -766,7 +767,7 @@ GetImgTag = async function (o, h) {
 	return ar.join("");
 }
 
-LoadAddon = async function (ext, Id, arError, param) {
+LoadAddon = async function (ext, Id, arError, param, bDisabled) {
 	var r;
 	try {
 		var sc;
@@ -776,7 +777,7 @@ LoadAddon = async function (ext, Id, arError, param) {
 		}
 		var fn = BuildPath("addons", Id, ar.join("."));
 		var s = await ReadTextFile(fn);
-		if (s) {
+		if (s && (!bDisabled || /await/.test(s))) {
 			if (ar[1] == "js") {
 				if (window.chrome) {
 					s = "(async () => {" + s + "\n})();";
@@ -846,7 +847,7 @@ AddonOptions = async function (Id, fn, Data, bNew) {
 		Data.index = res[2];
 		sFeatures = 'Default';
 	}
-	sURL = BuildPath(await te.Data.Installed, sURL);
+	sURL = BuildPath(ui_.Installed, sURL);
 	var opt = await api.CreateObject("Object");
 	opt.MainWindow = MainWindow.$;
 	opt.Data = Data;
@@ -962,7 +963,7 @@ ShowLocationEx = async function (s) {
 	var opt = await api.CreateObject("Object");
 	opt.MainWindow = MainWindow;
 	opt.Data = s;
-	ShowDialog(BuildPath(await te.Data.Installed, "script\\location.html"), opt);
+	ShowDialog(BuildPath(ui_.Installed, "script\\location.html"), opt);
 }
 
 MakeKeySelect = async function () {

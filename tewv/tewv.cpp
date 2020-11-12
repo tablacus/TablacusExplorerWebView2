@@ -10,9 +10,11 @@ const TCHAR g_szProgid[] = TEXT("Tablacus.WebView2");
 const TCHAR g_szClsid[] = TEXT("{55BBF1B8-0D30-4908-BE0C-D576612A0F48}");
 std::vector<DWORD>	g_pIconOverlayHandlers;
 HINSTANCE	g_hinstDll = NULL;
-HMODULE		g_hWebView2Loader = NULL;
 LONG		g_lLocks = 0;
+#ifdef _DEBUG
+HMODULE		g_hWebView2Loader = NULL;
 LPFNCreateCoreWebView2EnvironmentWithOptions _CreateCoreWebView2EnvironmentWithOptions = NULL;
+#endif
 
 std::unordered_map<std::wstring, DISPID> g_umSW = {
 	{ L"name", TE_PROPERTY + 1 },
@@ -363,14 +365,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 {
 	switch (dwReason) {
 	case DLL_PROCESS_ATTACH:
-		g_hWebView2Loader = LoadLibrary(L"WebView2Loader.dll");
-		if (!g_hWebView2Loader) {
-			WCHAR pszPath[MAX_PATH * 2];
-			g_hinstDll = hinstDll;
-			GetModuleFileName(hinstDll, pszPath, MAX_PATH * 2);
-			lstrcpy(PathFindFileName(pszPath), L"WebView2Loader.dll");
-			g_hWebView2Loader = LoadLibrary(pszPath);
-		}
+#ifdef _DEBUG
+		WCHAR pszPath[MAX_PATH * 2];
+		g_hinstDll = hinstDll;
+		GetModuleFileName(hinstDll, pszPath, MAX_PATH * 2);
+		lstrcpy(PathFindFileName(pszPath), L"WebView2Loader.dll");
+		g_hWebView2Loader = LoadLibrary(pszPath);
 		if (g_hWebView2Loader) {
 			LPFNGetAvailableCoreWebView2BrowserVersionString _GetAvailableCoreWebView2BrowserVersionString = NULL;
 			*(FARPROC *)&_GetAvailableCoreWebView2BrowserVersionString = GetProcAddress(g_hWebView2Loader, "GetAvailableCoreWebView2BrowserVersionString");
@@ -382,11 +382,14 @@ BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 				}
 			}
 		}
+#endif
 		break;
 	case DLL_PROCESS_DETACH:
+#ifdef _DEBUG
 		if (g_hWebView2Loader) {
 			FreeLibrary(g_hWebView2Loader);
 		}
+#endif
 		break;
 	}
 	return TRUE;
@@ -1031,13 +1034,28 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
-		if (_CreateCoreWebView2EnvironmentWithOptions) {
-			WCHAR pszDataPath[MAX_PATH];
-			GetTempPath(MAX_PATH, pszDataPath);
-			PathAppend(pszDataPath, L"tablacus");
-			_CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, NULL, this);
-			return S_OK;
+		WCHAR pszDataPath[MAX_PATH], pszProxySetting[MAX_PATH + 16], pszProxyServer[MAX_PATH];
+		GetTempPath(MAX_PATH, pszDataPath);
+		PathAppend(pszDataPath, L"tablacus");
+		pszProxyServer[0] = NULL;
+		HKEY hKey;
+		if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+			DWORD dwSize = MAX_PATH;
+			RegQueryValueEx(hKey, L"ProxyServer", NULL, NULL, (LPBYTE)&pszProxyServer, &dwSize);
+			RegCloseKey(hKey);
 		}
+		auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+		if (pszProxyServer[0]) {
+			lstrcpy(pszProxySetting, L"--proxy-server=");
+			lstrcat(pszProxySetting, pszProxyServer);
+			options->put_AdditionalBrowserArguments(pszProxySetting);
+		}
+#ifdef _DEBUG
+		_CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
+#else
+		CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
+#endif
+		return S_OK;
 	}
 	return E_NOTIMPL;
 }
@@ -1330,9 +1348,11 @@ STDMETHODIMP CteClassFactory::CreateInstance(IUnknown *pUnkOuter, REFIID riid, v
 	if (pUnkOuter != NULL) {
 		return CLASS_E_NOAGGREGATION;
 	}
+#ifdef _DEBUG
 	if (!_CreateCoreWebView2EnvironmentWithOptions) {
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
+#endif
 	*ppvObject = new CteBase();
 	return S_OK;
 }

@@ -346,7 +346,8 @@ async function SetTabControls() {
 	if (g_Chg.Tab) {
 		if (document.getElementById("Conf_TabDefault").checked) {
 			var cTC = await te.Ctrls(CTRL_TC);
-			for (var i = 0; i < await cTC.Count; ++i) {
+			var nLen = await cTC.Count;
+			for (var i = 0; i < nLen; ++i) {
 				SetTabControl(await cTC[i]);
 			}
 		} else {
@@ -421,10 +422,11 @@ async function MoveTabControl() {
 
 async function SwapTabControl() {
 	var TC1 = await te.Ctrl(CTRL_TC);
-	var cTC = await te.Ctrls(CTRL_TC, false);
-	for (var list = await api.CreateObject("Enum", cTC); !await list.atEnd(); await list.moveNext()) {
-		var TC = await cTC[await list.item()];
-		if (await TC.Visible && await TC.Id != await TC1.Id && await TC.Left == document.F.Tab_Left.value && await TC.Top == document.F.Tab_Top.value &&
+	var cTC = await te.Ctrls(CTRL_TC, true);
+	var nLen = await cTC.Count;
+	for (var i = 0; i < nLen; ++i) {
+		var TC = await cTC[i];
+		if (await TC.Id != await TC1.Id && await TC.Left == document.F.Tab_Left.value && await TC.Top == document.F.Tab_Top.value &&
 			await TC.Width == document.F.Tab_Width.value && await TC.Height == document.F.Tab_Height.value) {
 			TC.Left = await TC1.Left;
 			TC.Top = await TC1.Top;
@@ -440,14 +442,13 @@ async function SwapTabControl() {
 }
 
 async function InitConfig(o) {
-	var InstallPath = await te.Data.Installed;
-	if (InstallPath == await te.Data.DataFolder) {
+	if (ui_.Installed == await te.Data.DataFolder) {
 		return;
 	}
 	if (!await confirmOk()) {
 		return;
 	}
-	await api.SHFileOperation(FO_MOVE, BuildPath(InstallPath, "layout"), await te.Data.DataFolder, 0, false);
+	await api.SHFileOperation(FO_MOVE, BuildPath(ui_.Installed, "layout"), await te.Data.DataFolder, 0, false);
 	o.disabled = true;
 }
 
@@ -880,12 +881,11 @@ async function LoadX(mode, fn, form) {
 		} else {
 			g_x[mode] = form.List;
 			g_x[mode].length = 0;
-			var path = await te.Data.Installed;
 			var xml = await te.Data["xml" + AddonName];
 			if (!xml) {
 				xml = await api.CreateObject("Msxml2.DOMDocument");
 				xml.async = false;
-				await xml.load(BuildPath(path, "config", AddonName + ".xml"));
+				await xml.load(BuildPath(ui_.Installed, "config", AddonName + ".xml"));
 				te.Data["xml" + AddonName] = xml;
 			}
 
@@ -1050,7 +1050,7 @@ async function LoadAddons() {
 
 	var AddonId = {};
 	var wfd = await api.Memory("WIN32_FIND_DATA");
-	var path = BuildPath(await te.Data.Installed, "addons\\");
+	var path = BuildPath(ui_.Installed, "addons\\");
 	var hFind = await api.FindFirstFile(path + "*", wfd);
 	for (var bFind = hFind != INVALID_HANDLE_VALUE; await bFind; bFind = await api.FindNextFile(hFind, wfd)) {
 		var Id = await wfd.cFileName;
@@ -1290,7 +1290,7 @@ async function AddonRemove(Id) {
 	if (await AddonBeforeRemove(Id) < 0) {
 		return;
 	}
-	var path = BuildPath(await te.Data.Installed, "addons", Id);
+	var path = BuildPath(ui_.Installed, "addons", Id);
 	await DeleteItem(path, 0);
 	setTimeout(async function () {
 		if (!await IsExists(path)) {
@@ -1368,8 +1368,7 @@ InitOptions = async function () {
 		document.title = await GetText("Options") + " - " + TITLE;
 	})();
 	MainWindow.g_.OptionsWindow = $;
-	var InstallPath = await te.Data.Installed;
-	document.F.ButtonInitConfig.disabled = (InstallPath == await te.Data.DataFolder) | !await $.fso.FolderExists(BuildPath(InstallPath, "layout"));
+	document.F.ButtonInitConfig.disabled = (ui_.Installed == await te.Data.DataFolder) | !await $.fso.FolderExists(BuildPath(ui_.Installed, "layout"));
 	for (var i = 0; i < document.F.length; ++i) {
 		var o = document.F[i];
 		var Id = o.name || o.id;
@@ -1641,9 +1640,9 @@ InitDialog = async function () {
 	}
 	if (Query == "about") {
 		var s = ['<table style="border-spacing: 2em; border-collapse: separate; width: 100%"><tr><td>'];
-		var src = await MakeImgSrc(await api.GetModuleFileName(null), 0, true, 48);
+		var src = await MakeImgSrc(ui_.TEPath, 0, true, 48);
 		s.push('<img src="', src, '"></td><td><span style="font-weight: bold; font-size: 120%">', await AboutTE(2), '</span> (', await GetTextR((await api.sizeof("HANDLE") * 8) + '-bit'), ')<br>');
-		s.push('<br><a href="#" class="link" onclick="Run(0, this)">', await api.GetModuleFileName(null), '</a> (', await $.fso.GetFileVersion(await api.GetModuleFileName(null)), ')<br>');
+		s.push('<br><a href="#" class="link" onclick="Run(0, this)">', ui_.TEPath, '</a> (', await $.fso.GetFileVersion(ui_.TEPath), ')<br>');
 		s.push('<br><a href="#" class="link" onclick="Run(1, this)">', BuildPath(await te.Data.DataFolder, "config"), '</a><br>');
 		s.push('<br><label>Information</label><input type="text" value="', await AboutTE(3), '" style="width: 100%" onclick="this.select()" readonly><br>');
 		var root = await te.Data.Addons.documentElement;
@@ -1801,7 +1800,7 @@ InitLocation = async function () {
 		})(o);
 	}
 	await LoadLang2(BuildPath("addons", Addon_Id, "lang", await GetLangId() + ".xml"));
-	await LoadAddon("js", Addon_Id, await ar, param);
+	await LoadAddon("js", Addon_Id, ar, param);
 	if (window.chrome) {
 		ar = await api.CreateObject("SafeArray", ar);
 	}
@@ -2129,7 +2128,7 @@ async function PortableX(Id) {
 		return;
 	}
 	var o = GetElement(Id);
-	var s = await $.fso.GetDriveName(await api.GetModuleFileName(null));
+	var s = await $.fso.GetDriveName(ui_.TEPath);
 	SetValue(o, o.value.replace(await wsh.ExpandEnvironmentStrings("%UserProfile%"), "%UserProfile%").replace(new RegExp('^("?)' + s, "igm"), "$1%Installed%").replace(new RegExp('( "?)' + s, "igm"), "$1%Installed%").replace(new RegExp('(:)' + s, "igm"), "$1%Installed%"));
 }
 
@@ -2200,7 +2199,7 @@ function AddMouse(o) {
 
 async function InitAddonOptions(bFlag) {
 	returnValue = false;
-	await LoadLang2(BuildPath(await te.Data.Installed, "addons", Addon_Id, "lang", await GetLangId() + ".xml"));
+	await LoadLang2(BuildPath(ui_.Installed, "addons", Addon_Id, "lang", await GetLangId() + ".xml"));
 	await ApplyLang(document);
 	info = await GetAddonInfo(Addon_Id);
 	document.title = await info.Name;
@@ -2312,13 +2311,13 @@ async function SelectLangID(o) {
 	var i = 0;
 	var Langs = [];
 	var wfd = await api.Memory("WIN32_FIND_DATA");
-	var hFind = await api.FindFirstFile(BuildPath(await te.Data.Installed, "lang\\*.xml"), wfd);
+	var hFind = await api.FindFirstFile(BuildPath(ui_.Installed, "lang\\*.xml"), wfd);
 	for (var bFind = hFind != INVALID_HANDLE_VALUE; await bFind; bFind = await api.FindNextFile(hFind, wfd)) {
 		Langs.push((await wfd.cFileName).replace(/\..*$/, ""));
 	}
 	api.FindClose(hFind);
 	Langs.sort();
-	var path = BuildPath(await te.Data.Installed, "lang\\");
+	var path = BuildPath(ui_.Installed, "lang\\");
 	var hMenu = await api.CreatePopupMenu();
 	for (i in Langs) {
 		var xml = await api.CreateObject("Msxml2.DOMDocument");
@@ -2368,7 +2367,7 @@ function UpdateAddon(Id, o) {
 }
 
 async function CheckAddon(Id) {
-	return $.fso.FileExists(BuildPath(await te.Data.Installed, "addons", Id, "config.xml"));
+	return $.fso.FileExists(BuildPath(ui_.Installed, "addons", Id, "config.xml"));
 }
 
 function AddonsSearch() {
@@ -2494,7 +2493,7 @@ async function ArrangeAddon(xml, td, Progress) {
 					if (!await installed.DllVersion) {
 						return;
 					}
-					var path = BuildPath(await te.Data.Installed, "addons", Id);
+					var path = BuildPath(ui_.Installed, "addons", Id);
 					var wfd = await api.Memory("WIN32_FIND_DATA");
 					var hFind = await api.FindFirstFile(BuildPath(path, "*" + (await api.sizeof("HANDLE") * 8) + ".dll"), wfd);
 					api.FindClose(hFind);
@@ -2583,7 +2582,7 @@ async function Install2(xhr, url, o) {
 			return;
 		}
 	}
-	await api.SHFileOperation(FO_MOVE, dest, BuildPath(await te.Data.Installed, "addons"), FOF_NOCONFIRMATION | FOF_NOCONFIRMMKDIR, false);
+	await api.SHFileOperation(FO_MOVE, dest, BuildPath(ui_.Installed, "addons"), FOF_NOCONFIRMATION | FOF_NOCONFIRMMKDIR, false);
 	o.disabled = true;
 	o.value = await GetText("Installed");
 	o = document.getElementById('_Addons_' + Id);

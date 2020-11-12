@@ -11,11 +11,13 @@
 #include <exdispid.h>
 #include <Mshtml.h>
 #include <mshtmhst.h>
-//#include <wrl.h>
+#include <wrl.h>
 #include <wil/com.h>
+#include <WebView2EnvironmentOptions.h>
 #include "WebView2.h"
 #pragma comment (lib, "shlwapi.lib")
-//using namespace Microsoft::WRL;
+#pragma comment (lib, "version.lib")
+using namespace Microsoft::WRL;
 
 #define TE_VT 24
 #define TE_VI 0xffffff

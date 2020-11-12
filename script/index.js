@@ -311,21 +311,23 @@ ArrangeAddons = async function () {
 		var items = await root.childNodes;
 		if (items) {
 			var arError = await api.CreateObject("Array");
-			for (var i = 0; i < await GetLength(items); ++i) {
+			var LangId = await GetLangId();
+			var nLen = await GetLength(items);
+			for (var i = 0; i < nLen; ++i) {
 				var item = await items[i];
 				var Id = await item.nodeName;
 				g_.Error_source = Id;
 				if (!AddonId[Id]) {
 					var Enabled = GetNum(await item.getAttribute("Enabled"));
-					if (Enabled && (!window.chrome || await item.getAttribute("Level") > 1)) {
+					if (Enabled) {
 						if (Enabled & 6) {
-							LoadLang2(BuildPath(await te.Data.Installed, "addons", Id, "lang", await GetLangId() + ".xml"));
+							LoadLang2(BuildPath(ui_.Installed, "addons", Id, "lang", LangId + ".xml"));
 						}
 						if (Enabled & 8) {
-							LoadAddon("vbs", Id, arError);
+							LoadAddon("vbs", Id, arError, window.chrome && await item.getAttribute("Level") < 2);
 						}
 						if (Enabled & 1) {
-							LoadAddon("js", Id, arError);
+							LoadAddon("js", Id, arError, window.chrome && await item.getAttribute("Level") < 2);
 						}
 					}
 					AddonId[Id] = true;
