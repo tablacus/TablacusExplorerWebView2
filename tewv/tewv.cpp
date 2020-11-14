@@ -1568,8 +1568,11 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			if (nArg >= 0) {
 				LONG nStart = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
 				LONG nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : MAXINT;
-				if (nStart + nLen > GetCount()) {
+				if (nStart > GetCount() - nLen) {
 					nLen = GetCount() - nStart;
+				}
+				if (nLen < 0) {
+					nLen = 0;
 				}
 				VARIANT v;
 				VariantInit(&v);
@@ -1581,7 +1584,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 					}
 					teSetObjectRelease(pVarResult, pNewArray);
 				}
-				if (dispIdMember == TE_METHOD + 7) {//Splice
+				if (dispIdMember == TE_METHOD + 7 && nLen) {//Splice
 					int n = GetCount();
 					if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
 						for (int i = nLen; --i >= 0;) {
