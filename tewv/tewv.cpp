@@ -1034,7 +1034,8 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
-		WCHAR pszDataPath[MAX_PATH], pszProxySetting[MAX_PATH + 16], pszProxyServer[MAX_PATH];
+		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATH + 64], pszProxyServer[MAX_PATH];
+		lstrcpy(pszSetting, L"--disable-web-security");
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
 		pszProxyServer[0] = NULL;
@@ -1046,10 +1047,10 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 		}
 		auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
 		if (pszProxyServer[0]) {
-			lstrcpy(pszProxySetting, L"--proxy-server=");
-			lstrcat(pszProxySetting, pszProxyServer);
-			options->put_AdditionalBrowserArguments(pszProxySetting);
+			lstrcat(pszSetting, L" --proxy-server=");
+			lstrcat(pszSetting, pszProxyServer);
 		}
+		options->put_AdditionalBrowserArguments(pszSetting);
 #ifdef _DEBUG
 		_CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
 #else
