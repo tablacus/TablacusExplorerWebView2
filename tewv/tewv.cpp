@@ -1802,6 +1802,16 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 		VariantInit(pVarResult);
 	}
 	if (dispIdMember == DISPID_VALUE) {
+		if (pDispParams->cArgs == 1 && pDispParams->rgvarg[0].vt == VT_BSTR) {
+			auto itr2 = m_umIndex.find(pDispParams->rgvarg[0].bstrVal);
+			if (itr2 != m_umIndex.end()) {
+				auto itr = m_mData.find(itr2->second);
+				if (itr != m_mData.end()) {
+					VariantCopy(pVarResult, &itr->second);
+				}
+			}
+			return S_OK;
+		}
 		teSetObject(pVarResult, this);
 		return S_OK;
 	}
