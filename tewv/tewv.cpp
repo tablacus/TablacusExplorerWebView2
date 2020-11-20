@@ -465,8 +465,10 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler),
 		QITABENT(CteBase, ICoreWebView2DocumentTitleChangedEventHandler),
 		QITABENT(CteBase, ICoreWebView2NavigationCompletedEventHandler),
-		{ 0 },
+#pragma warning( push )
+#pragma warning( disable: 4838 )
 	};
+#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1325,8 +1327,10 @@ STDMETHODIMP CteClassFactory::QueryInterface(REFIID riid, void **ppvObject)
 	static const QITAB qit[] =
 	{
 		QITABENT(CteClassFactory, IClassFactory),
-		{ 0 },
+#pragma warning( push )
+#pragma warning( disable: 4838 )
 	};
+#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1390,8 +1394,10 @@ STDMETHODIMP CteArray::QueryInterface(REFIID riid, void **ppvObject)
 	{
 		QITABENT(CteArray, IDispatch),
 		QITABENT(CteArray, IDispatchEx),
-		{ 0 },
+#pragma warning( push )
+#pragma warning( disable: 4838 )
 	};
+#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1604,7 +1610,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 			return S_OK;
 
 		case DISPID_PROPERTYPUT:
-			if ((wFlags & DISPATCH_PROPERTYPUT) && nArg >= 0) {
+			if ((wFlags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) && nArg >= 0) {
 				if (pDispParams->rgvarg[nArg].vt == (VT_ARRAY | VT_VARIANT)) {
 					if (m_bDestroy) {
 						m_bDestroy = FALSE;
@@ -1753,8 +1759,10 @@ STDMETHODIMP CteObjectEx::QueryInterface(REFIID riid, void **ppvObject)
 	{
 		QITABENT(CteObjectEx, IDispatch),
 		QITABENT(CteObjectEx, IDispatchEx),
-		{ 0 },
+#pragma warning( push )
+#pragma warning( disable: 4838 )
 	};
+#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1828,7 +1836,7 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 			if (itr != m_mData.end()) {
 				VariantCopy(pVarResult, &itr->second);
 			}
-		} else if (wFlags & DISPATCH_PROPERTYPUT) {
+		} else if (wFlags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) {
 			int nArg = pDispParams ? pDispParams->cArgs - 1 : -1;
 			if (nArg >= 0) {
 				if (pDispParams->rgvarg[nArg].vt != VT_EMPTY) {
@@ -1948,8 +1956,10 @@ STDMETHODIMP CteDispatch::QueryInterface(REFIID riid, void **ppvObject)
 	static const QITAB qit[] =
 	{
 		QITABENT(CteDispatch, IDispatch),
-		{ 0 },
+#pragma warning( push )
+#pragma warning( disable: 4838 )
 	};
+#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
