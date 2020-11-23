@@ -465,10 +465,8 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler),
 		QITABENT(CteBase, ICoreWebView2DocumentTitleChangedEventHandler),
 		QITABENT(CteBase, ICoreWebView2NavigationCompletedEventHandler),
-#pragma warning( push )
-#pragma warning( disable: 4838 )
+		{ 0 }
 	};
-#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1327,10 +1325,8 @@ STDMETHODIMP CteClassFactory::QueryInterface(REFIID riid, void **ppvObject)
 	static const QITAB qit[] =
 	{
 		QITABENT(CteClassFactory, IClassFactory),
-#pragma warning( push )
-#pragma warning( disable: 4838 )
+		{ 0 }
 	};
-#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1394,10 +1390,8 @@ STDMETHODIMP CteArray::QueryInterface(REFIID riid, void **ppvObject)
 	{
 		QITABENT(CteArray, IDispatch),
 		QITABENT(CteArray, IDispatchEx),
-#pragma warning( push )
-#pragma warning( disable: 4838 )
+		{ 0 }
 	};
-#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1759,10 +1753,8 @@ STDMETHODIMP CteObjectEx::QueryInterface(REFIID riid, void **ppvObject)
 	{
 		QITABENT(CteObjectEx, IDispatch),
 		QITABENT(CteObjectEx, IDispatchEx),
-#pragma warning( push )
-#pragma warning( disable: 4838 )
+		{ 0 }
 	};
-#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 
@@ -1956,10 +1948,8 @@ STDMETHODIMP CteDispatch::QueryInterface(REFIID riid, void **ppvObject)
 	static const QITAB qit[] =
 	{
 		QITABENT(CteDispatch, IDispatch),
-#pragma warning( push )
-#pragma warning( disable: 4838 )
+		{ 0 }
 	};
-#pragma warning( pop )
 	return QISearch(this, qit, riid, ppvObject);
 }
 

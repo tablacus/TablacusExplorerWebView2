@@ -19,9 +19,6 @@
 #pragma comment (lib, "version.lib")
 using namespace Microsoft::WRL;
 
-#undef OFFSETOFCLASS
-#define OFFSETOFCLASS(base, derived) ((int)((unsigned __int64)((base*)((derived*)8))-8ULL))
-
 #define TE_VT 24
 #define TE_VI 0xffffff
 #define TE_METHOD		0x60010000
