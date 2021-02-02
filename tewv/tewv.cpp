@@ -1175,11 +1175,6 @@ STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 	int deviceYDPI = GetDeviceCaps(hdc, LOGPIXELSY);
 	ReleaseDC(m_hwndParent, hdc);
 	m_webviewController->SetBoundsAndZoomFactor(*lprcClipRect, 96.0 / deviceYDPI);
-	if (m_webviewWindow) {
-		wchar_t pszCmd[MAX_PATH];
-		swprintf_s(pszCmd, MAX_PATH, L"deviceYDPI = %d;", deviceYDPI);
-		m_webviewWindow->ExecuteScript(pszCmd, this);
-	}
 	return S_OK;
 }
 
