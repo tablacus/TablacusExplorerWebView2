@@ -53,7 +53,7 @@ typedef HRESULT (WINAPI * LPFNGetAvailableCoreWebView2BrowserVersionString)(PCWS
 
 // Base Object
 class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject, public IServiceProvider,
-	public IDropTarget,
+	public IDropTarget, public IShellBrowser,
 	public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
 	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
 	public ICoreWebView2ExecuteScriptCompletedHandler,
@@ -172,6 +172,20 @@ public:
 	STDMETHODIMP DragOver(DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
 	STDMETHODIMP DragLeave();
 	STDMETHODIMP Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
+	//IShellBrowser
+	STDMETHODIMP InsertMenusSB(HMENU hmenuShared, LPOLEMENUGROUPWIDTHS lpMenuWidths);
+	STDMETHODIMP SetMenuSB(HMENU hmenuShared, HOLEMENU holemenuRes, HWND hwndActiveObject);
+	STDMETHODIMP RemoveMenusSB(HMENU hmenuShared);
+	STDMETHODIMP SetStatusTextSB(LPCWSTR lpszStatusText);
+	STDMETHODIMP EnableModelessSB(BOOL fEnable);
+	STDMETHODIMP TranslateAcceleratorSB(LPMSG lpmsg, WORD wID);
+	STDMETHODIMP BrowseObject(PCUIDLIST_RELATIVE pidl, UINT wFlags);
+	STDMETHODIMP GetViewStateStream(DWORD grfMode, IStream **ppStrm);
+	STDMETHODIMP GetControlWindow(UINT id, HWND *lphwnd);
+	STDMETHODIMP SendControlMsg(UINT id, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pret);
+	STDMETHODIMP QueryActiveShellView(IShellView **ppshv);
+	STDMETHODIMP OnViewWindowActive(IShellView *ppshv);
+	STDMETHODIMP SetToolbarItems(LPTBBUTTONSB lpButtons, UINT nButtons, UINT uFlags);
 	//IServiceProvider
 	STDMETHODIMP QueryService(REFGUID guidService, REFIID riid, void **ppv);
 	//ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler

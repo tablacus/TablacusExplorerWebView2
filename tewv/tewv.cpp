@@ -450,6 +450,11 @@ CteBase::~CteBase()
 
 STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 {
+	if (IsEqualIID(riid, IID_IOleWindow)) {
+		*ppvObject = static_cast<IOleInPlaceObject *>(this);
+		AddRef();
+		return S_OK;
+	}
 	static const QITAB qit[] =
 	{
 		QITABENT(CteBase, IDispatch),
@@ -457,9 +462,9 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, IWebBrowserApp),
 		QITABENT(CteBase, IWebBrowser2),
 		QITABENT(CteBase, IOleObject),
-		QITABENT(CteBase, IOleWindow),
 		QITABENT(CteBase, IOleInPlaceObject),
 		QITABENT(CteBase, IDropTarget),
+		QITABENT(CteBase, IShellBrowser),
 		QITABENT(CteBase, IServiceProvider),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler),
@@ -1207,6 +1212,83 @@ STDMETHODIMP CteBase::Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, 
 	return E_NOTIMPL;
 }
 
+//IShellBrowser
+STDMETHODIMP CteBase::InsertMenusSB(HMENU hmenuShared, LPOLEMENUGROUPWIDTHS lpMenuWidths)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::SetMenuSB(HMENU hmenuShared, HOLEMENU holemenuRes, HWND hwndActiveObject)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::RemoveMenusSB(HMENU hmenuShared)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::SetStatusTextSB(LPCWSTR lpszStatusText)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::EnableModelessSB(BOOL fEnable)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::TranslateAcceleratorSB(LPMSG lpmsg, WORD wID)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::BrowseObject(PCUIDLIST_RELATIVE pidl, UINT wFlags)
+{
+	WCHAR pszPath[MAX_PATH];
+	if (SHGetPathFromIDList(pidl, pszPath)) {
+		VARIANTARG *pv = GetNewVARIANT(7);
+		VARIANT_BOOL bCancel = VARIANT_FALSE;
+		teSetObject(&pv[6], this);
+		pv[5].bstrVal = ::SysAllocString(pszPath);
+		pv[5].vt = VT_BSTR;
+		pv[0].vt = VT_BYREF | VT_BOOL;
+		pv[0].pboolVal = &bCancel;
+		Invoke5(m_pdisp, DISPID_BEFORENAVIGATE2, DISPATCH_METHOD, NULL, 7, pv);
+		if (bCancel) {
+			return S_OK;
+		}
+	}
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::GetViewStateStream(DWORD grfMode, IStream **ppStrm)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::GetControlWindow(UINT id, HWND *lphwnd)
+{
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::SendControlMsg(UINT id, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pret){
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::QueryActiveShellView(IShellView **ppshv){
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::OnViewWindowActive(IShellView *ppshv){
+	return E_NOTIMPL;
+}
+
+STDMETHODIMP CteBase::SetToolbarItems(LPTBBUTTONSB lpButtons, UINT nButtons, UINT uFlags)
+{
+	return E_NOTIMPL;
+}
+
 //IServiceProvider
 STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 {
@@ -1217,6 +1299,9 @@ STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 	if (IsEqualGUID(guidService, SID_TablacusArray)) {
 		*ppv = new CteArray();
 		return S_OK;
+	}
+	if (IsEqualIID(riid, IID_IShellBrowser)) {
+		return QueryInterface(riid, ppv);
 	}
 	return E_NOINTERFACE;
 }
