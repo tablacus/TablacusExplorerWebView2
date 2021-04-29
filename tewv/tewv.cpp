@@ -8,7 +8,6 @@
 // Global Variables:
 const TCHAR g_szProgid[] = TEXT("Tablacus.WebView2");
 const TCHAR g_szClsid[] = TEXT("{55BBF1B8-0D30-4908-BE0C-D576612A0F48}");
-std::vector<DWORD>	g_pIconOverlayHandlers;
 HINSTANCE	g_hinstDll = NULL;
 LONG		g_lLocks = 0;
 #ifdef _DEBUG
@@ -1433,6 +1432,12 @@ STDMETHODIMP CteClassFactory::CreateInstance(IUnknown *pUnkOuter, REFIID riid, v
 	if (!_CreateCoreWebView2EnvironmentWithOptions) {
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
+#else
+	LPWSTR versionInfo;
+	if (GetAvailableCoreWebView2BrowserVersionString(NULL, &versionInfo) != S_OK) {
+		return CLASS_E_CLASSNOTAVAILABLE;
+	}
+	CoTaskMemFree(versionInfo);
 #endif
 	*ppvObject = new CteBase();
 	return S_OK;
