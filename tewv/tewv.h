@@ -259,7 +259,6 @@ public:
 private:
 	SAFEARRAY *m_psa;
 	LONG	m_cRef;
-	BOOL	m_bDestroy;
 };
 
 class CteObjectEx : public IDispatchEx

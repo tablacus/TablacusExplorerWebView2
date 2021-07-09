@@ -1459,14 +1459,11 @@ CteArray::CteArray()
 	m_cRef = 1;
 	SAFEARRAYBOUND sab = { 0, 0 };
 	m_psa = SafeArrayCreate(VT_VARIANT, 1, &sab);
-	m_bDestroy = TRUE;
 }
 
 CteArray::~CteArray()
 {
-	if (m_bDestroy) {
-		SafeArrayDestroy(m_psa);
-	}
+	SafeArrayDestroy(m_psa);
 }
 
 STDMETHODIMP CteArray::QueryInterface(REFIID riid, void **ppvObject)
@@ -1691,11 +1688,8 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 		case DISPID_PROPERTYPUT:
 			if ((wFlags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) && nArg >= 0) {
 				if (pDispParams->rgvarg[nArg].vt == (VT_ARRAY | VT_VARIANT)) {
-					if (m_bDestroy) {
-						m_bDestroy = FALSE;
-						SafeArrayDestroy(m_psa);
-						m_psa = pDispParams->rgvarg[nArg].parray;
-					}
+					SafeArrayDestroy(m_psa);
+					SafeArrayCopy(pDispParams->rgvarg[nArg].parray, &m_psa);
 				}
 			}
 			return S_OK;
