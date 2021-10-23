@@ -11,13 +11,10 @@
 #include <exdispid.h>
 #include <Mshtml.h>
 #include <mshtmhst.h>
-#include <wrl.h>
-#include <wil/com.h>
 #include "WebView2EnvironmentOptions.h"
 #include "WebView2.h"
 #pragma comment (lib, "shlwapi.lib")
 #pragma comment (lib, "version.lib")
-using namespace Microsoft::WRL;
 
 #define TE_VT 24
 #define TE_VI 0xffffff
@@ -207,8 +204,8 @@ private:
 	IOleClientSite *m_pOleClientSite;
 	IDispatch *m_pdisp;
 	HWND m_hwndParent;
-	wil::com_ptr<ICoreWebView2Controller> m_webviewController;
-	wil::com_ptr<ICoreWebView2> m_webviewWindow;
+	ICoreWebView2Controller *m_webviewController;
+	ICoreWebView2 *m_webviewWindow;
 	EventRegistrationToken m_documentTitleChangedToken;
 	EventRegistrationToken m_navigationStartingToken;
 	EventRegistrationToken m_navigationCompletedToken;

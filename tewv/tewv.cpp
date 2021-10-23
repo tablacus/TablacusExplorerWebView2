@@ -9,19 +9,20 @@
 const TCHAR g_szProgid[] = TEXT("Tablacus.WebView2");
 const TCHAR g_szClsid[] = TEXT("{55BBF1B8-0D30-4908-BE0C-D576612A0F48}");
 HINSTANCE	g_hinstDll = NULL;
+LPWSTR g_versionInfo = NULL;
 LONG		g_lLocks = 0;
 #ifdef _DEBUG
 HMODULE		g_hWebView2Loader = NULL;
 LPFNCreateCoreWebView2EnvironmentWithOptions _CreateCoreWebView2EnvironmentWithOptions = NULL;
 #endif
 
-std::unordered_map<std::wstring, DISPID> g_umSW = {
-	{ L"name", TE_PROPERTY + 1 },
-	{ L"fullname", TE_PROPERTY + 2 },
-	{ L"path", TE_PROPERTY + 3 },
-	{ L"visible", TE_PROPERTY + 4 },
-	{ L"document", TE_PROPERTY + 5 },
-	{ L"window", TE_PROPERTY + 6 },
+std::unordered_map<std::string, DISPID> g_umSW = {
+	{ "name", TE_PROPERTY + 1 },
+	{ "fullname", TE_PROPERTY + 2 },
+	{ "path", TE_PROPERTY + 3 },
+	{ "visible", TE_PROPERTY + 4 },
+	{ "document", TE_PROPERTY + 5 },
+	{ "window", TE_PROPERTY + 6 },
 };
 
 std::unordered_map<std::wstring, DISPID> g_umArray = {
@@ -374,9 +375,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 			LPFNGetAvailableCoreWebView2BrowserVersionString _GetAvailableCoreWebView2BrowserVersionString = NULL;
 			*(FARPROC *)&_GetAvailableCoreWebView2BrowserVersionString = GetProcAddress(g_hWebView2Loader, "GetAvailableCoreWebView2BrowserVersionString");
 			if (_GetAvailableCoreWebView2BrowserVersionString) {
-				LPWSTR versionInfo;
-				if (_GetAvailableCoreWebView2BrowserVersionString(NULL, &versionInfo) == S_OK) {
-					CoTaskMemFree(versionInfo);
+				if (_GetAvailableCoreWebView2BrowserVersionString(NULL, &g_versionInfo) == S_OK) {
 					*(FARPROC *)&_CreateCoreWebView2EnvironmentWithOptions = GetProcAddress(g_hWebView2Loader, "CreateCoreWebView2EnvironmentWithOptions");
 				}
 			}
@@ -384,9 +383,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 #endif
 		break;
 	case DLL_PROCESS_DETACH:
+		if (g_versionInfo) {
+			::CoTaskMemFree(g_versionInfo);
+		}
 #ifdef _DEBUG
 		if (g_hWebView2Loader) {
-			FreeLibrary(g_hWebView2Loader);
+			::FreeLibrary(g_hWebView2Loader);
 		}
 #endif
 		break;
@@ -434,6 +436,8 @@ CteBase::CteBase()
 	m_pdisp = NULL;
 	m_bstrPath = NULL;
 	m_pDocument = NULL;
+	m_webviewController = NULL;
+	m_webviewWindow = NULL;
 }
 
 CteBase::~CteBase()
@@ -445,6 +449,8 @@ CteBase::~CteBase()
 	SafeRelease(&m_pOleClientSite);
 	SafeRelease(&m_pdisp);
 	SafeRelease(&m_pDocument);
+	SafeRelease(&m_webviewController);
+	SafeRelease(&m_webviewWindow);
 }
 
 STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
@@ -501,12 +507,16 @@ STDMETHODIMP CteBase::GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo)
 
 STDMETHODIMP CteBase::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-	BSTR bs = ::SysAllocString(*rgszNames);
-	for (int i = ::SysStringLen(bs); i-- > 0;) {
-		bs[i] = tolower(bs[i]);
+	CHAR pszName[9];
+	for (int i = 0;; ++i) {
+		WCHAR wc = rgszNames[0][i];
+		if (i == _countof(pszName) - 1 || wc < '0' || wc > 'z') {
+			pszName[i] = NULL;
+			break;
+		}
+		pszName[i] = tolower(wc);
 	}
-	auto itr = g_umSW.find(bs);
-	::SysFreeString(bs);
+	auto itr = g_umSW.find(pszName);
 	if (itr != g_umSW.end()) {
 		*rgDispId = itr->second;
 		return S_OK;
@@ -642,7 +652,7 @@ STDMETHODIMP CteBase::Stop(void)
 
 STDMETHODIMP CteBase::get_Application(IDispatch **ppDisp)
 {
-	return E_NOTIMPL;
+	return QueryInterface(IID_PPV_ARGS(ppDisp));
 }
 
 STDMETHODIMP CteBase::get_Parent(IDispatch **ppDisp)
@@ -777,7 +787,8 @@ STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
 {
-	*Name = ::SysAllocString(L"WebView2");
+	*Name = ::SysAllocStringLen(L"WebView2/", lstrlen(g_versionInfo) + 9);
+	lstrcat(*Name, g_versionInfo);
 	return S_OK;
 }
 
@@ -1315,7 +1326,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Environment *created_e
 //ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdController)
 {
-	m_webviewController = createdController;
+	createdController->QueryInterface(IID_PPV_ARGS(&m_webviewController));
 	m_webviewController->get_CoreWebView2(&m_webviewWindow);
 	ICoreWebView2Settings* Settings;
 	m_webviewWindow->get_Settings(&Settings);
@@ -1356,10 +1367,11 @@ STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, IUnknown* args) {
 	if (!m_pdisp) {
 		return E_NOTIMPL;
 	}
-	wil::unique_cotaskmem_string title;
+	LPWSTR title = NULL;
 	if (sender->get_DocumentTitle(&title) == S_OK) {
 		VARIANT v;
-		v.bstrVal = ::SysAllocString(title.get());
+		v.bstrVal = ::SysAllocString(title);
+		::CoTaskMemFree(title);
 		v.vt = VT_BSTR;
 		Invoke5(m_pdisp, DISPID_TITLECHANGE, DISPATCH_METHOD, NULL, -1, &v);
 		VariantClear(&v);
@@ -1433,11 +1445,9 @@ STDMETHODIMP CteClassFactory::CreateInstance(IUnknown *pUnkOuter, REFIID riid, v
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
 #else
-	LPWSTR versionInfo;
-	if (GetAvailableCoreWebView2BrowserVersionString(NULL, &versionInfo) != S_OK) {
+	if (GetAvailableCoreWebView2BrowserVersionString(NULL, &g_versionInfo) != S_OK) {
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
-	CoTaskMemFree(versionInfo);
 #endif
 	*ppvObject = new CteBase();
 	return S_OK;
