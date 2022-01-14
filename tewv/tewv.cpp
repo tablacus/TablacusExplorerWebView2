@@ -1333,6 +1333,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 	Settings->put_IsScriptEnabled(TRUE);
 	Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
 	Settings->put_IsWebMessageEnabled(TRUE);
+	Settings->put_IsStatusBarEnabled(FALSE);
 	if (m_pOleClientSite) {
 		IDocHostUIHandler *pDocHostUIHandler;
 		if SUCCEEDED(m_pOleClientSite->QueryInterface(IID_PPV_ARGS(&pDocHostUIHandler))) {
