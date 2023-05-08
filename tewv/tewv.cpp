@@ -1056,8 +1056,13 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 		pszProxyServer[0] = NULL;
 		HKEY hKey;
 		if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-			DWORD dwSize = MAX_PATH;
-			RegQueryValueEx(hKey, L"ProxyServer", NULL, NULL, (LPBYTE)&pszProxyServer, &dwSize);
+			DWORD dwSize = sizeof(DWORD);
+			DWORD dwProxyEnable = 0;
+			RegQueryValueEx(hKey, L"ProxyEnable", NULL, NULL, (LPBYTE)&dwProxyEnable, &dwSize);
+			if (dwProxyEnable) {
+				dwSize = MAX_PATH;
+				RegQueryValueEx(hKey, L"ProxyServer", NULL, NULL, (LPBYTE)&pszProxyServer, &dwSize);
+			}
 			RegCloseKey(hKey);
 		}
 		auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
