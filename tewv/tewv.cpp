@@ -438,6 +438,10 @@ CteBase::CteBase()
 	m_pDocument = NULL;
 	m_webviewController = NULL;
 	m_webviewWindow = NULL;
+#ifdef USE_DRAGDROP
+	m_webviewEnvironment3 = NULL;
+	m_webviewCompositionController3 = NULL;
+#endif
 }
 
 CteBase::~CteBase()
@@ -451,7 +455,20 @@ CteBase::~CteBase()
 	SafeRelease(&m_pDocument);
 	SafeRelease(&m_webviewController);
 	SafeRelease(&m_webviewWindow);
+#ifdef USE_DRAGDROP
+	SafeRelease(&m_webviewCompositionController3);
+	SafeRelease(&m_webviewEnvironment3);
+#endif
 }
+
+#ifdef USE_DRAGDROP
+VOID CteBase::OffsetPointToWebView(LPPOINT ppt)
+{
+	HWND hwnd;
+	GetWindow(&hwnd);
+	::ScreenToClient(hwnd, ppt);
+}
+#endif
 
 STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 {
@@ -473,6 +490,9 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, IServiceProvider),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler),
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2ControllerCompletedHandler),
+#ifdef USE_DRAGDROP
+		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler),
+#endif
 		QITABENT(CteBase, ICoreWebView2DocumentTitleChangedEventHandler),
 		QITABENT(CteBase, ICoreWebView2NavigationCompletedEventHandler),
 		{ 0 }
@@ -797,7 +817,7 @@ STDMETHODIMP CteBase::get_HWND(SHANDLE_PTR *pHWND)
 	HWND hwnd;
 	HRESULT hr = GetWindow(&hwnd);
 	*pHWND = (HANDLE_PTR)hwnd;
-	return S_OK;
+	return hr;
 }
 
 STDMETHODIMP CteBase::get_FullName(BSTR *FullName)
@@ -964,6 +984,11 @@ STDMETHODIMP CteBase::put_RegisterAsDropTarget(VARIANT_BOOL bRegister)
 			pDocHostUIHandler->GetDropTarget(this, &pDropTarget);
 			RegisterDragDrop(hwnd, pDropTarget);
 			pDropTarget->Release();
+#ifdef USE_DRAGDROP
+			if (m_webviewEnvironment3) {
+				m_webviewEnvironment3->CreateCoreWebView2CompositionController(m_hwndParent, this);
+			}
+#endif
 		}
 	}
 	return S_OK;
@@ -1067,8 +1092,9 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 		}
 		auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
 		if (pszProxyServer[0]) {
-			lstrcat(pszSetting, L" --proxy-server=");
+			lstrcat(pszSetting, L" --proxy-server=\"");
 			lstrcat(pszSetting, pszProxyServer);
+			lstrcat(pszSetting, L"\"");
 		}
 		options->put_AdditionalBrowserArguments(pszSetting);
 #ifdef _DEBUG
@@ -1144,28 +1170,17 @@ STDMETHODIMP CteBase::SetColorScheme(LOGPALETTE *pLogpal)
 //IOleWindow
 STDMETHODIMP CteBase::GetWindow(HWND *phwnd)
 {
-	HRESULT hr = E_FAIL;
-	if (m_webviewController) {
-		HWND hwnd1, hwnd = NULL;
-		hr = m_webviewController->get_ParentWindow(&hwnd1);
-		if (hr == S_OK) {
-			hwnd = hwnd1;
-			hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_WidgetWin_0", NULL);
-			if (hwnd1) {
-				hwnd = hwnd1;
-				hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_WidgetWin_1", NULL);
-				if (hwnd1) {
-					hwnd = hwnd1;
-					hwnd1 = FindWindowEx(hwnd1, NULL, L"Chrome_RenderWidgetHostHWND", NULL);
-					if (hwnd1) {
-						hwnd = hwnd1;
-					}
-				}
+	if (m_hwndParent) {
+		*phwnd = FindWindowEx(m_hwndParent, NULL, L"Chrome_WidgetWin_0", NULL);
+		if (*phwnd) {
+			*phwnd = FindWindowEx(*phwnd, NULL, L"Chrome_WidgetWin_1", NULL);
+			if (*phwnd) {
+				*phwnd = FindWindowEx(*phwnd, NULL, L"Chrome_RenderWidgetHostHWND", NULL);
+				return S_OK;
 			}
 		}
-		*phwnd = hwnd;
 	}
-	return hr;
+	return E_FAIL;
 }
 
 STDMETHODIMP CteBase::ContextSensitiveHelp(BOOL fEnterMode)
@@ -1195,6 +1210,7 @@ STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 	int deviceYDPI = GetDeviceCaps(hdc, LOGPIXELSY);
 	ReleaseDC(m_hwndParent, hdc);
 	m_webviewController->SetBoundsAndZoomFactor(*lprcClipRect, 96.0 / deviceYDPI);
+	CopyRect(&m_webviewBounds, lprcClipRect);
 	return S_OK;
 }
 
@@ -1209,21 +1225,47 @@ STDMETHODIMP CteBase::ReactivateAndUndo(void)
 //IDropTarget
 STDMETHODIMP CteBase::DragEnter(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
 {
+#ifdef USE_DRAGDROP
+	if (m_webviewCompositionController3) {
+		POINT ptc = { pt.x, pt.y };
+		OffsetPointToWebView(&ptc);
+		return m_webviewCompositionController3->DragEnter(pDataObj, grfKeyState, ptc, pdwEffect);
+	}
+#endif
 	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::DragOver(DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
 {
+#ifdef USE_DRAGDROP
+	if (m_webviewCompositionController3) {
+		POINT ptc = { pt.x, pt.y };
+		OffsetPointToWebView(&ptc);
+		return m_webviewCompositionController3->DragOver(grfKeyState, ptc, pdwEffect);
+	}
+#endif
 	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::DragLeave()
 {
+#ifdef USE_DRAGDROP
+	if (m_webviewCompositionController3) {
+		return m_webviewCompositionController3->DragLeave();
+	}
+#endif
 	return E_NOTIMPL;
 }
 
 STDMETHODIMP CteBase::Drop(IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
 {
+#ifdef USE_DRAGDROP
+	if (m_webviewCompositionController3) {
+		POINT ptc = { pt.x, pt.y };
+		OffsetPointToWebView(&ptc);
+		return m_webviewCompositionController3->Drop(pDataObj, grfKeyState, ptc, pdwEffect);
+	}
+#endif
 	return E_NOTIMPL;
 }
 
@@ -1325,6 +1367,9 @@ STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Environment *created_environment)
 {
 	created_environment->CreateCoreWebView2Controller(m_hwndParent, this);
+#ifdef USE_DRAGDROP
+	created_environment->QueryInterface(IID_PPV_ARGS(&m_webviewEnvironment3));
+#endif
 	return S_OK;
 }
 
@@ -1361,6 +1406,15 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 	m_webviewController->put_IsVisible(TRUE);
 	return S_OK;
 }
+
+#ifdef USE_DRAGDROP
+//ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler
+STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2CompositionController *createdController)
+{	
+	SafeRelease(&m_webviewCompositionController3);
+	return createdController->QueryInterface(IID_PPV_ARGS(&m_webviewCompositionController3));
+}
+#endif
 
 //ICoreWebView2ExecuteScriptCompletedHandler
 STDMETHODIMP CteBase::Invoke(HRESULT result, LPCWSTR resultObjectAsJson)

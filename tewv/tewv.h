@@ -30,6 +30,8 @@
 #define DISPID_TE_MAX TE_VI
 #define MAX_PATHEX				32768
 
+//#define USE_DRAGDROP 1
+
 //Tablacus Explorer (Edge)
 const CLSID CLSID_WebBrowserExt             = {0x55bbf1b8, 0x0d30, 0x4908, { 0xbe, 0x0c, 0xd5, 0x76, 0x61, 0x2a, 0x0f, 0x48}};
 // {BD34E79B-963F-4AFB-B03E-C5BD289B5080}
@@ -53,6 +55,9 @@ class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject
 	public IDropTarget, public IShellBrowser,
 	public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
 	public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,
+#ifdef USE_DRAGDROP
+	public ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler,
+#endif
 	public ICoreWebView2ExecuteScriptCompletedHandler,
 	public ICoreWebView2DocumentTitleChangedEventHandler,
 	public ICoreWebView2NavigationStartingEventHandler,
@@ -189,6 +194,10 @@ public:
 	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Environment *created_environment);
 	//ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2Controller *createdController);
+#ifdef USE_DRAGDROP
+	//ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler
+	STDMETHODIMP Invoke(HRESULT result, ICoreWebView2CompositionController *createdController);
+#endif
 	//ICoreWebView2ExecuteScriptCompletedHandler
 	STDMETHODIMP Invoke(HRESULT result, LPCWSTR resultObjectAsJson);
 	//ICoreWebView2DocumentTitleChangedEventHandler
@@ -200,18 +209,28 @@ public:
 
 	CteBase();
 	~CteBase();
+
+#ifdef USE_DRAGDROP
+	VOID OffsetPointToWebView(LPPOINT point);
+#endif
 private:
 	IOleClientSite *m_pOleClientSite;
 	IDispatch *m_pdisp;
 	HWND m_hwndParent;
 	ICoreWebView2Controller *m_webviewController;
 	ICoreWebView2 *m_webviewWindow;
+#ifdef USE_DRAGDROP
+	ICoreWebView2Environment3 *m_webviewEnvironment3;
+	ICoreWebView2CompositionController3 *m_webviewCompositionController3;
+#endif
 	EventRegistrationToken m_documentTitleChangedToken;
 	EventRegistrationToken m_navigationStartingToken;
 	EventRegistrationToken m_navigationCompletedToken;
 	BSTR m_bstrPath;
+//	HANDLE m_hOleDropTargetInterface;
 
 	IDispatch	*m_pDocument;
+	RECT		m_webviewBounds;
 	LONG		m_cRef;
 };
 
