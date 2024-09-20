@@ -1074,19 +1074,22 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
-		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATH + 64], pszProxyServer[MAX_PATH];
-		lstrcpy(pszSetting, L"--disable-web-security");
+		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATHEX + 64], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX];
+		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu");
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
 		pszProxyServer[0] = NULL;
+		pszProxyOverride[0] = NULL;
 		HKEY hKey;
 		if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
 			DWORD dwSize = sizeof(DWORD);
 			DWORD dwProxyEnable = 0;
 			RegQueryValueEx(hKey, L"ProxyEnable", NULL, NULL, (LPBYTE)&dwProxyEnable, &dwSize);
-			if (dwProxyEnable) {
-				dwSize = MAX_PATH;
+			if (dwProxyEnable & 1) {
+				dwSize = MAX_PATHEX;
 				RegQueryValueEx(hKey, L"ProxyServer", NULL, NULL, (LPBYTE)&pszProxyServer, &dwSize);
+				dwSize = MAX_PATHEX;
+				RegQueryValueEx(hKey, L"ProxyOverride", NULL, NULL, (LPBYTE)&pszProxyOverride, &dwSize);
 			}
 			RegCloseKey(hKey);
 		}
@@ -1094,6 +1097,11 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 		if (pszProxyServer[0]) {
 			lstrcat(pszSetting, L" --proxy-server=\"");
 			lstrcat(pszSetting, pszProxyServer);
+			lstrcat(pszSetting, L"\"");
+		}
+		if (pszProxyOverride[0]) {
+			lstrcat(pszSetting, L" --proxy-bypass-list=\"");
+			lstrcat(pszSetting, pszProxyOverride);
 			lstrcat(pszSetting, L"\"");
 		}
 		options->put_AdditionalBrowserArguments(pszSetting);
