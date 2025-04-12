@@ -62,6 +62,7 @@ class CteBase : public IWebBrowser2, public IOleObject, public IOleInPlaceObject
 	public ICoreWebView2DocumentTitleChangedEventHandler,
 	public ICoreWebView2NavigationStartingEventHandler,
 	public ICoreWebView2NavigationCompletedEventHandler
+//	public ICoreWebView2WebResourceResponseReceivedEventHandler
 {
 public:
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObject);
@@ -206,6 +207,8 @@ public:
 	STDMETHODIMP Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args);
 	//ICoreWebView2NavigationCompletedEventHandler
 	STDMETHODIMP Invoke(ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args);
+	//ICoreWebView2WebResourceResponseReceivedEventHandler
+	//STDMETHODIMP Invoke(ICoreWebView2 *sender, ICoreWebView2WebResourceResponseReceivedEventArgs *args);
 
 	CteBase();
 	~CteBase();
@@ -226,6 +229,7 @@ private:
 	EventRegistrationToken m_documentTitleChangedToken;
 	EventRegistrationToken m_navigationStartingToken;
 	EventRegistrationToken m_navigationCompletedToken;
+//	EventRegistrationToken m_resourceResponseToken;
 	BSTR m_bstrPath;
 //	HANDLE m_hOleDropTargetInterface;
 

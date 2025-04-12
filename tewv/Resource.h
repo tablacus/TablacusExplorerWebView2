@@ -3,7 +3,7 @@
 #define INTERNALNAME "tewv"
 #define STRING(str) STRING2(str)
 #define STRING2(str) #str
-#define VER_Y		24
-#define VER_M		9
-#define VER_D		20
+#define VER_Y		25
+#define VER_M		4
+#define VER_D		11
 #define VER_Z		0

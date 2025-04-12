@@ -495,7 +495,8 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 #endif
 		QITABENT(CteBase, ICoreWebView2DocumentTitleChangedEventHandler),
 		QITABENT(CteBase, ICoreWebView2NavigationCompletedEventHandler),
-		{ 0 }
+//		QITABENT(CteBase, ICoreWebView2WebResourceResponseReceivedEventHandler),
+	{ 0 }
 	};
 	return QISearch(this, qit, riid, ppvObject);
 }
@@ -1074,8 +1075,8 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
-		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATHEX + 64], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX];
-		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu");
+		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATHEX + 128], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX];
+		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu --embedded-browser-webview-dpi-awareness=1");
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
 		pszProxyServer[0] = NULL;
@@ -1406,6 +1407,11 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 		m_webviewWindow->add_DocumentTitleChanged(this, &m_documentTitleChangedToken);
 		m_webviewWindow->add_NavigationStarting(this, &m_navigationStartingToken);
 		m_webviewWindow->add_NavigationCompleted(this, &m_navigationCompletedToken);
+/*		ICoreWebView2_2 *webview2;
+		if SUCCEEDED(m_webviewWindow->QueryInterface(IID_PPV_ARGS(&webview2))) {
+			webview2->add_WebResourceResponseReceived(this, &m_resourceResponseToken);
+			webview2->Release();
+		}*/
 	}
 	SetObjectRects(NULL, NULL);
 	if (m_bstrPath) {
@@ -1477,6 +1483,22 @@ STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, ICoreWebView2NavigationCompl
 	SetObjectRects(NULL, NULL);
 	return Invoke5(m_pdisp, DISPID_DOCUMENTCOMPLETE, DISPATCH_METHOD, NULL, 0, NULL);
 }
+/*
+//ICoreWebView2WebResourceResponseReceivedEventHandler
+STDMETHODIMP CteBase::Invoke(ICoreWebView2 *sender, ICoreWebView2WebResourceResponseReceivedEventArgs *args)
+{
+	ICoreWebView2WebResourceResponseView *response;
+	if SUCCEEDED(args->get_Response(&response)) {
+		ICoreWebView2HttpResponseHeaders *responseHeaders;
+		if SUCCEEDED(response->get_Headers(&responseHeaders)) {
+//			responseHeaders->AppendHeader(L"Access-Control-Allow-Origin", L"*");
+			responseHeaders->Release();
+		}
+		response->Release();
+	}
+	return S_OK;
+}*/
+
 // CteClassFactory
 
 STDMETHODIMP CteClassFactory::QueryInterface(REFIID riid, void **ppvObject)
