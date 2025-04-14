@@ -1075,10 +1075,17 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
-		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATHEX + 128], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX];
+		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATHEX + 128], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX], pszTemp[MAX_PATHEX];
 		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu --embedded-browser-webview-dpi-awareness=1");
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
+
+		SYSTEMTIME st;
+		GetSystemTime(&st);
+		WCHAR pszX[] = L"0123456789abcdefghijklmnopqrstuvwxyz";
+		swprintf_s(pszTemp, MAX_PATH, L"wv%02d%c%c%c%c%02d", st.wYear % 100, pszX[st.wMonth], pszX[st.wDay], pszX[st.wHour], pszX[st.wMonth], st.wSecond);
+		PathAppend(pszDataPath, pszTemp);
+
 		pszProxyServer[0] = NULL;
 		pszProxyOverride[0] = NULL;
 		HKEY hKey;
