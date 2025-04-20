@@ -11,6 +11,7 @@ const TCHAR g_szClsid[] = TEXT("{55BBF1B8-0D30-4908-BE0C-D576612A0F48}");
 HINSTANCE	g_hinstDll = NULL;
 LPWSTR g_versionInfo = NULL;
 LONG		g_lLocks = 0;
+int g_deviceYDPI = 96;
 #ifdef _DEBUG
 HMODULE		g_hWebView2Loader = NULL;
 LPFNCreateCoreWebView2EnvironmentWithOptions _CreateCoreWebView2EnvironmentWithOptions = NULL;
@@ -1076,7 +1077,10 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
 		WCHAR pszDataPath[MAX_PATH], pszSetting[MAX_PATHEX + 128], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX], pszTemp[MAX_PATHEX];
-		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu --embedded-browser-webview-dpi-awareness=1");
+		HDC hdc = GetDC(hwndParent);
+		g_deviceYDPI = GetDeviceCaps(hdc, LOGPIXELSY);
+		ReleaseDC(hwndParent, hdc);
+		swprintf_s(pszSetting, MAX_PATH, L"--allow-file-access-from-files --disable-gpu --disable-extensions --disable-features=IsolateOrigins,site-per-process --force-device-scale-factor=%g", g_deviceYDPI / 96.0);
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
 
@@ -1222,10 +1226,7 @@ STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 		GetClientRect(m_hwndParent, &bounds);
 		lprcClipRect = &bounds;
 	}
-	HDC hdc = GetDC(m_hwndParent);
-	int deviceYDPI = GetDeviceCaps(hdc, LOGPIXELSY);
-	ReleaseDC(m_hwndParent, hdc);
-	m_webviewController->SetBoundsAndZoomFactor(*lprcClipRect, 96.0 / deviceYDPI);
+	m_webviewController->SetBoundsAndZoomFactor(*lprcClipRect, 96.0 / g_deviceYDPI);
 	CopyRect(&m_webviewBounds, lprcClipRect);
 	return S_OK;
 }
