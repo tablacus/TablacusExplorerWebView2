@@ -11,7 +11,6 @@ const TCHAR g_szClsid[] = TEXT("{55BBF1B8-0D30-4908-BE0C-D576612A0F48}");
 HINSTANCE	g_hinstDll = NULL;
 LPWSTR g_versionInfo = NULL;
 LONG		g_lLocks = 0;
-WCHAR g_pszDataPath[MAX_PATH];
 #ifdef _DEBUG
 HMODULE		g_hWebView2Loader = NULL;
 LPFNCreateCoreWebView2EnvironmentWithOptions _CreateCoreWebView2EnvironmentWithOptions = NULL;
@@ -361,53 +360,6 @@ VOID teVariantChangeType(__out VARIANTARG * pvargDest,
 	}
 }
 
-VOID DeleteDirectoryR(const WCHAR* pszDir)
-{
-	// Get path to powershell.exe
-	WCHAR szPowershell[1024];
-	UINT len = GetSystemDirectory(szPowershell, MAX_PATH);
-	if (len == 0 || len + 40 >= MAX_PATH) {
-		return;
-	}
-	lstrcat(szPowershell, L"\\WindowsPowerShell\\v1.0\\powershell.exe");
-	DWORD attr = GetFileAttributesW(szPowershell);
-	if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY)) {
-		return;
-	}
-	PathQuoteSpaces(szPowershell);
-
-	// Get the current process ID
-	DWORD pid = GetCurrentProcessId();
-
-	// Build PowerShell command:
-	// Wait-Process -Id <PID>; Remove-Item -Recurse -Force "<dir>"
-	WCHAR szCommand[1024];
-	swprintf_s(szCommand, _countof(szCommand), L" -Command Wait-Process -Id %u; Remove-Item -Recurse -Force \"%s\"", pid, pszDir);
-	lstrcat(szPowershell, szCommand);
-
-	// Setup process startup info
-	STARTUPINFOW si = { sizeof(si) };
-	PROCESS_INFORMATION pi;
-
-	// Launch PowerShell process hidden
-	BOOL result = CreateProcess(
-		NULL,               // Application name (included in command line)
-		szPowershell,       // Command line
-		NULL,               // Process security
-		NULL,               // Thread security
-		FALSE,              // Inherit handles
-		CREATE_NO_WINDOW,   // Hide console window
-		NULL,               // Environment
-		NULL,               // Current directory
-		&si, &pi
-	);
-
-	if (result) {
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-	}
-}
-
 // Initialize & Finalize
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 {
@@ -439,7 +391,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 			::FreeLibrary(g_hWebView2Loader);
 		}
 #endif
-		DeleteDirectoryR(g_pszDataPath);
 		break;
 	}
 	return TRUE;
@@ -1124,16 +1075,15 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
+		WCHAR pszDataPath[MAX_PATH];
 		WCHAR pszSetting[MAX_PATHEX + 128], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX], pszTemp[MAX_PATHEX];
 		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu --disable-extensions --disable-features=IsolateOrigins,site-per-process --force-device-scale-factor=1");
-		GetTempPath(MAX_PATH, g_pszDataPath);
-		PathAppend(g_pszDataPath, L"tablacus");
-
-		SYSTEMTIME st;
-		GetSystemTime(&st);
-		WCHAR pszX[] = L"0123456789abcdefghijklmnopqrstuvwxyz";
-		swprintf_s(pszTemp, MAX_PATH, L"wv%02d%c%c%c%c%02d", st.wYear % 100, pszX[st.wMonth], pszX[st.wDay], pszX[st.wHour], pszX[st.wMonth], st.wSecond);
-		PathAppend(g_pszDataPath, pszTemp);
+		GetTempPath(MAX_PATH, pszDataPath);
+		PathAppend(pszDataPath, L"tablacus");
+		HDC hdc = GetDC(hwndParent);
+		swprintf_s(pszTemp, MAX_PATH, L"wv%d", GetDeviceCaps(hdc, LOGPIXELSY));
+		ReleaseDC(hwndParent, hdc);
+		PathAppend(pszDataPath, pszTemp);
 
 		pszProxyServer[0] = NULL;
 		pszProxyOverride[0] = NULL;
@@ -1163,9 +1113,9 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 		}
 		options->put_AdditionalBrowserArguments(pszSetting);
 #ifdef _DEBUG
-		_CreateCoreWebView2EnvironmentWithOptions(NULL, g_pszDataPath, options.Get(), this);
+		_CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
 #else
-		CreateCoreWebView2EnvironmentWithOptions(NULL, g_pszDataPath, options.Get(), this);
+		CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
 #endif
 		return S_OK;
 	}

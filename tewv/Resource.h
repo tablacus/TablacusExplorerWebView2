@@ -5,5 +5,5 @@
 #define STRING2(str) #str
 #define VER_Y		25
 #define VER_M		4
-#define VER_D		21
+#define VER_D		30
 #define VER_Z		0
