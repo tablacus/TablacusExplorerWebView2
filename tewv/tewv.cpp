@@ -1080,10 +1080,6 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu --disable-extensions --disable-features=IsolateOrigins,site-per-process --force-device-scale-factor=1");
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
-		HDC hdc = GetDC(hwndParent);
-		swprintf_s(pszTemp, MAX_PATH, L"wv%d", GetDeviceCaps(hdc, LOGPIXELSY));
-		ReleaseDC(hwndParent, hdc);
-		PathAppend(pszDataPath, pszTemp);
 
 		pszProxyServer[0] = NULL;
 		pszProxyOverride[0] = NULL;
