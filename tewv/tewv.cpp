@@ -303,7 +303,7 @@ VOID teClearVariantArgs(int nArgs, VARIANTARG *pvArgs)
 	}
 }
 
-HRESULT Invoke5(IDispatch *pdisp, DISPID dispid, WORD wFlags, VARIANT *pvResult, int nArgs, VARIANTARG *pvArgs)
+HRESULT Invoke6(IDispatch *pdisp, DISPID dispid, WORD wFlags, VARIANT *pvResult, int nArgs, VARIANTARG *pvArgs, EXCEPINFO *pExcepInfo)
 {
 	HRESULT hr;
 	// DISPPARAMS
@@ -320,7 +320,7 @@ HRESULT Invoke5(IDispatch *pdisp, DISPID dispid, WORD wFlags, VARIANT *pvResult,
 	}
 	try {
 		hr = pdisp->Invoke(dispid, IID_NULL, LOCALE_USER_DEFAULT,
-			wFlags, &dispParams, pvResult, NULL, NULL);
+			wFlags, &dispParams, pvResult, pExcepInfo, NULL);
 	} catch (...) {
 		hr = E_FAIL;
 	}
@@ -328,9 +328,14 @@ HRESULT Invoke5(IDispatch *pdisp, DISPID dispid, WORD wFlags, VARIANT *pvResult,
 	return hr;
 }
 
+HRESULT Invoke5(IDispatch *pdisp, DISPID dispid, WORD wFlags, VARIANT *pvResult, int nArgs, VARIANTARG *pvArgs)
+{
+	return Invoke6(pdisp, dispid, wFlags, pvResult, nArgs, pvArgs, NULL);
+}
+
 HRESULT Invoke4(IDispatch *pdisp, VARIANT *pvResult, int nArgs, VARIANTARG *pvArgs)
 {
-	return Invoke5(pdisp, DISPID_VALUE, DISPATCH_METHOD, pvResult, nArgs, pvArgs);
+	return Invoke6(pdisp, DISPID_VALUE, DISPATCH_METHOD, pvResult, nArgs, pvArgs, NULL);
 }
 
 VARIANTARG* GetNewVARIANT(int n)
@@ -1387,6 +1392,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 	createdController->QueryInterface(IID_PPV_ARGS(&m_webviewController));
 	m_webviewController->get_CoreWebView2(&m_webviewWindow);
 	ICoreWebView2Settings* Settings;
+//	m_webviewWindow->OpenDevToolsWindow();
 	m_webviewWindow->get_Settings(&Settings);
 	Settings->put_IsScriptEnabled(TRUE);
 	Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
@@ -1805,7 +1811,7 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 					VariantInit(&v);
 					ItemEx(dispIdMember - DISPID_COLLECTION_MIN, &v, NULL);
 					if (v.vt == VT_DISPATCH) {
-						Invoke5(v.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg);
+						Invoke6(v.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg, pExcepInfo);
 					}
 					VariantClear(&v);
 					return S_OK;
@@ -1998,7 +2004,7 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 			auto itr = m_mData.find(dispIdMember);
 			if (itr != m_mData.end()) {
 				if (itr->second.vt == VT_DISPATCH) {
-					Invoke5(itr->second.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg);
+					Invoke6(itr->second.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg, pExcepInfo);
 				}
 			}
 		} else if (wFlags & DISPATCH_PROPERTYGET) {
