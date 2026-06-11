@@ -1,6 +1,6 @@
 // Tablacus WebView2 (C)2020 Gaku
 // MIT Lisence
-// Visual Studio Express 2017 for Windows Desktop
+// Visual Studio Express 2017
 // https://tablacus.github.io/
 
 #include "tewv.h"

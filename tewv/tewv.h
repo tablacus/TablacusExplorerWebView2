@@ -15,7 +15,16 @@
 #include "WebView2.h"
 #pragma comment (lib, "shlwapi.lib")
 #pragma comment (lib, "version.lib")
-
+#if defined(_M_ARM64)
+#pragma comment(lib, "kernel32.lib")
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+#pragma comment(lib, "advapi32.lib") // RegCloseKey, EventRegister etc...
+#pragma comment(lib, "shell32.lib")  // SHGetPathFromIDListW etc...
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib") // SysAllocString, SafeArray etc...
+#pragma comment(lib, "uuid.lib")
+#endif
 #define TE_VT 24
 #define TE_VI 0xffffff
 #define TE_METHOD		0x60010000

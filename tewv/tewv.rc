@@ -23,8 +23,10 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
             VALUE "FileVersion", STRING(VER_Y) "." STRING(VER_M) "." STRING(VER_D) "." STRING(VER_Z) "\0"
             VALUE "InternalName", INTERNALNAME "\0"
             VALUE "LegalCopyright", "(C) Gaku\0"
-#ifdef _WIN64
-            VALUE "OriginalFilename", INTERNALNAME "64.dll\0"
+#if defined(_M_ARM64)
+			VALUE "OriginalFilename", INTERNALNAME "ARM64.dll\0"
+#elif defined(_M_X64)
+			VALUE "OriginalFilename", INTERNALNAME "64.dll\0"
 #else
             VALUE "OriginalFilename", INTERNALNAME "32.dll\0"
 #endif
