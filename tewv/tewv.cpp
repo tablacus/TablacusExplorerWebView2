@@ -533,7 +533,7 @@ STDMETHODIMP CteBase::GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo)
 
 STDMETHODIMP CteBase::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-	CHAR pszName[9];
+	CHAR pszName[9] = { 0 };
 	for (int i = 0;; ++i) {
 		WCHAR wc = rgszNames[0][i];
 		if (i == _countof(pszName) - 1 || wc < '0' || wc > 'z') {
@@ -754,13 +754,13 @@ STDMETHODIMP CteBase::put_Height(long Height)
 
 STDMETHODIMP CteBase::get_LocationName(BSTR *LocationName)
 {
-	*LocationName = ::SysAllocString(m_bstrPath);
+	*LocationName = ::SysAllocString(m_bstrPath ? m_bstrPath : L"");
 	return S_OK;
 }
 
 STDMETHODIMP CteBase::get_LocationURL(BSTR *LocationURL)
 {
-	*LocationURL = ::SysAllocString(m_bstrPath);
+	*LocationURL = ::SysAllocString(m_bstrPath ? m_bstrPath : L"");
 	return S_OK;
 }
 
@@ -773,7 +773,7 @@ STDMETHODIMP CteBase::get_Busy(VARIANT_BOOL *pBool)
 //IWebBrowserApp
 STDMETHODIMP CteBase::Quit(void)
 {
-	return m_webviewWindow->Stop();
+	return m_webviewWindow ? m_webviewWindow->Stop() : E_NOINTERFACE;
 }
 
 STDMETHODIMP CteBase::ClientToWindow(int *pcx, int *pcy)
@@ -799,6 +799,9 @@ STDMETHODIMP CteBase::PutProperty(BSTR Property, VARIANT vtValue)
 STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 {
 	if (lstrcmpi(Property, L"InvokeMethod") == 0) {
+		if (!m_webviewWindow) {
+			return E_NOINTERFACE;
+		}
 		BSTR bs = ::SysAllocString(L"_InvokeMethod();");
 		m_webviewWindow->ExecuteScript(bs, this);
 		teSysFreeString(&bs);
@@ -813,8 +816,12 @@ STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
 {
-	*Name = ::SysAllocStringLen(L"WebView2/", lstrlen(g_versionInfo) + 9);
-	lstrcat(*Name, g_versionInfo);
+	if (!g_versionInfo) {
+		return E_NOINTERFACE;
+	}
+	int nLen = lstrlen(g_versionInfo);
+	*Name = ::SysAllocStringLen(L"WebView2/", nLen + 9);
+	StrNCpy(*Name + 9, g_versionInfo, nLen);
 	return S_OK;
 }
 
@@ -1217,6 +1224,9 @@ STDMETHODIMP CteBase::UIDeactivate(void)
 
 STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 {
+	if (!m_webviewController) {
+		return E_NOINTERFACE;
+	}
 	RECT bounds;
 	if (!lprcPosRect) {
 		GetClientRect(m_hwndParent, &bounds);
@@ -1364,11 +1374,11 @@ STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 {
 	if (IsEqualGUID(guidService, SID_TablacusObject)) {
 		*ppv = new CteObjectEx();
-		return S_OK;
+		return *ppv ? S_OK : E_OUTOFMEMORY;
 	}
 	if (IsEqualGUID(guidService, SID_TablacusArray)) {
 		*ppv = new CteArray();
-		return S_OK;
+		return *ppv ? S_OK : E_OUTOFMEMORY;
 	}
 	if (IsEqualIID(riid, IID_IShellBrowser)) {
 		return QueryInterface(riid, ppv);
@@ -1379,6 +1389,9 @@ STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 //ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Environment *created_environment)
 {
+	if (FAILED(result) || !created_environment) {
+		return result;
+	}
 	created_environment->CreateCoreWebView2Controller(m_hwndParent, this);
 #ifdef USE_DRAGDROP
 	created_environment->QueryInterface(IID_PPV_ARGS(&m_webviewEnvironment3));
@@ -1389,6 +1402,9 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Environment *created_e
 //ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdController)
 {
+	if (FAILED(result) || !createdController) {
+		return result;
+	}
 	createdController->QueryInterface(IID_PPV_ARGS(&m_webviewController));
 	m_webviewController->get_CoreWebView2(&m_webviewWindow);
 	ICoreWebView2Settings* Settings;
@@ -1398,6 +1414,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 	Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
 	Settings->put_IsWebMessageEnabled(TRUE);
 	Settings->put_IsStatusBarEnabled(FALSE);
+	SafeRelease(&Settings);
 	if (m_pOleClientSite) {
 		IDocHostUIHandler *pDocHostUIHandler;
 		if SUCCEEDED(m_pOleClientSite->QueryInterface(IID_PPV_ARGS(&pDocHostUIHandler))) {
@@ -1676,14 +1693,18 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				if (pVarResult) {
 					LONG l = 0;
 					::SafeArrayGetElement(m_psa, &l, pVarResult);
+				} else {
+					VARIANT vTmp;
+					LONG l = 0;
+					::SafeArrayGetElement(m_psa, &l, &vTmp);
+					::VariantClear(&vTmp);
 				}
 				VARIANT *pv;
 				if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
-					::VariantClear(pv);
-					::CopyMemory(pv, &pv[1], sizeof(VARIANT) * --n);
-					::VariantInit(&pv[n]);
+					::MoveMemory(pv, &pv[1], sizeof(VARIANT) * (n - 1));
+					::VariantInit(&pv[n - 1]);
 					::SafeArrayUnaccessData(m_psa);
-					SAFEARRAYBOUND sab = { (ULONG)n, 0 };
+					SAFEARRAYBOUND sab = { (ULONG)n - 1, 0 };
 					::SafeArrayRedim(m_psa, &sab);
 				}
 			}
@@ -1749,11 +1770,11 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 
 		case TE_METHOD + 6://Slice
 		case TE_METHOD + 7://Splice
-			CteArray *pNewArray;
-			if (pVarResult) {
-				pNewArray = new CteArray();
-			}
 			if (nArg >= 0) {
+				CteArray *pNewArray = NULL;
+				if (pVarResult) {
+					pNewArray = new CteArray();
+				}
 				LONG nStart = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
 				LONG nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : MAXINT;
 				if (nStart > GetCount() - nLen) {
@@ -1787,6 +1808,8 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 					sab = { (ULONG)n - nLen, 0 };
 					::SafeArrayRedim(m_psa, &sab);
 				}
+			} else if (pVarResult) {
+				teSetObjectRelease(pVarResult, new CteArray());
 			}
 			return S_OK;
 
@@ -1865,8 +1888,8 @@ STDMETHODIMP CteArray::GetMemberProperties(DISPID id, DWORD grfdexFetch, DWORD *
 STDMETHODIMP CteArray::GetMemberName(DISPID id, BSTR *pbstrName)
 {
 	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + GetCount()) {
-		wchar_t pszName[8];
-		swprintf_s(pszName, 8, L"%d", id - DISPID_COLLECTION_MIN);
+		wchar_t pszName[16];
+		swprintf_s(pszName, 16, L"%d", id - DISPID_COLLECTION_MIN);
 		*pbstrName = ::SysAllocString(pszName);
 		return S_OK;
 	}
@@ -1973,8 +1996,11 @@ STDMETHODIMP CteObjectEx::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT c
 	auto itr = m_umIndex.find(*rgszNames);
 	if (itr == m_umIndex.end()) {
 		*rgDispId = m_dispId;
+		if (m_dispId >= TE_PROPERTY) {
+			return DISP_E_UNKNOWNNAME;
+		}
 		m_umIndex[*rgszNames] = m_dispId++;
-		return  (m_dispId < TE_PROPERTY) ? S_OK : DISP_E_UNKNOWNNAME;
+		return S_OK;
 	}
 	*rgDispId = itr->second;
 	return S_OK;
