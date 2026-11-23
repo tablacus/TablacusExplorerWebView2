@@ -1,5 +1,5 @@
 // Tablacus WebView2 (C)2020 Gaku
-// MIT Lisence
+// MIT License
 // Visual Studio Express 2017
 // https://tablacus.github.io/
 
@@ -163,7 +163,7 @@ VOID teSetLL(VARIANT *pv, LONGLONG ll)
 
 BOOL teSetObject(VARIANT *pv, PVOID pObj)
 {
-	if (pObj) {
+	if (pv && pObj) {
 		try {
 			IUnknown *punk = static_cast<IUnknown *>(pObj);
 			if SUCCEEDED(punk->QueryInterface(IID_PPV_ARGS(&pv->pdispVal))) {
@@ -231,6 +231,7 @@ VOID teSetBSTR(VARIANT *pv, BSTR bs, int nLen)
 HRESULT teGetDispIdNum(LPOLESTR lpszName, int nMax, DISPID *pid)
 {
 	VARIANT v, vo;
+	*pid = DISPID_UNKNOWN;
 	teSetSZ(&v, lpszName);
 	VariantInit(&vo);
 	if (SUCCEEDED(VariantChangeType(&vo, &v, 0, VT_I4))) {
@@ -306,6 +307,10 @@ VOID teClearVariantArgs(int nArgs, VARIANTARG *pvArgs)
 HRESULT Invoke6(IDispatch *pdisp, DISPID dispid, WORD wFlags, VARIANT *pvResult, int nArgs, VARIANTARG *pvArgs, EXCEPINFO *pExcepInfo)
 {
 	HRESULT hr;
+	if (!pdisp) {
+		teClearVariantArgs(nArgs, pvArgs);
+		return E_POINTER;
+	}
 	// DISPPARAMS
 	DISPPARAMS dispParams;
 	dispParams.rgvarg = pvArgs;
@@ -365,37 +370,79 @@ VOID teVariantChangeType(__out VARIANTARG * pvargDest,
 	}
 }
 
-// Initialize & Finalize
+// Version string of the installed WebView2 runtime (first successful query wins)
+VOID teSetVersionInfo(LPWSTR lpVersion)
+{
+	if (::InterlockedCompareExchangePointer((PVOID volatile *)&g_versionInfo, lpVersion, NULL) != NULL) {
+		::CoTaskMemFree(lpVersion);
+	}
+}
+
+#ifdef _DEBUG
+// Loads WebView2Loader.dll lazily (not inside DllMain, to avoid loader-lock problems)
+BOOL teLoadDebugLoader()
+{
+	if (_CreateCoreWebView2EnvironmentWithOptions) {
+		return TRUE;
+	}
+	if (!g_hWebView2Loader) {
+		WCHAR pszPath[MAX_PATH * 2];
+		GetModuleFileName(g_hinstDll, pszPath, MAX_PATH * 2);
+		lstrcpy(PathFindFileName(pszPath), L"WebView2Loader.dll");
+		g_hWebView2Loader = LoadLibrary(pszPath);
+	}
+	if (g_hWebView2Loader) {
+		LPFNGetAvailableCoreWebView2BrowserVersionString _GetAvailableCoreWebView2BrowserVersionString = NULL;
+		*(FARPROC *)&_GetAvailableCoreWebView2BrowserVersionString = GetProcAddress(g_hWebView2Loader, "GetAvailableCoreWebView2BrowserVersionString");
+		if (_GetAvailableCoreWebView2BrowserVersionString) {
+			LPWSTR lpVersion = NULL;
+			if (_GetAvailableCoreWebView2BrowserVersionString(NULL, &lpVersion) == S_OK) {
+				teSetVersionInfo(lpVersion);
+				*(FARPROC *)&_CreateCoreWebView2EnvironmentWithOptions = GetProcAddress(g_hWebView2Loader, "CreateCoreWebView2EnvironmentWithOptions");
+			}
+		}
+	}
+	return _CreateCoreWebView2EnvironmentWithOptions != NULL;
+}
+#endif
+
+// Creates a COM object and returns the requested interface
+template <class T>
+static HRESULT teCreateObject(REFIID riid, void **ppv, bool bFallbackToDispatch)
+{
+	*ppv = NULL;
+	T *p = new (std::nothrow) T();
+	if (!p) {
+		return E_OUTOFMEMORY;
+	}
+	HRESULT hr = p->QueryInterface(riid, ppv);
+	if (FAILED(hr) && bFallbackToDispatch) {
+		hr = p->QueryInterface(IID_IDispatch, ppv);
+	}
+	p->Release();
+	return hr;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD dwReason, LPVOID lpReserved)
 {
 	switch (dwReason) {
 	case DLL_PROCESS_ATTACH:
-#ifdef _DEBUG
-		WCHAR pszPath[MAX_PATH * 2];
 		g_hinstDll = hinstDll;
-		GetModuleFileName(hinstDll, pszPath, MAX_PATH * 2);
-		lstrcpy(PathFindFileName(pszPath), L"WebView2Loader.dll");
-		g_hWebView2Loader = LoadLibrary(pszPath);
-		if (g_hWebView2Loader) {
-			LPFNGetAvailableCoreWebView2BrowserVersionString _GetAvailableCoreWebView2BrowserVersionString = NULL;
-			*(FARPROC *)&_GetAvailableCoreWebView2BrowserVersionString = GetProcAddress(g_hWebView2Loader, "GetAvailableCoreWebView2BrowserVersionString");
-			if (_GetAvailableCoreWebView2BrowserVersionString) {
-				if (_GetAvailableCoreWebView2BrowserVersionString(NULL, &g_versionInfo) == S_OK) {
-					*(FARPROC *)&_CreateCoreWebView2EnvironmentWithOptions = GetProcAddress(g_hWebView2Loader, "CreateCoreWebView2EnvironmentWithOptions");
-				}
-			}
-		}
-#endif
+		::DisableThreadLibraryCalls(hinstDll);
 		break;
 	case DLL_PROCESS_DETACH:
-		if (g_versionInfo) {
-			::CoTaskMemFree(g_versionInfo);
-		}
+		if (!lpReserved) {
+			if (g_versionInfo) {
+				::CoTaskMemFree(g_versionInfo);
+				g_versionInfo = NULL;
+			}
 #ifdef _DEBUG
-		if (g_hWebView2Loader) {
-			::FreeLibrary(g_hWebView2Loader);
-		}
+			if (g_hWebView2Loader) {
+				::FreeLibrary(g_hWebView2Loader);
+				g_hWebView2Loader = NULL;
+			}
 #endif
+		}
 		break;
 	}
 	return TRUE;
@@ -436,28 +483,51 @@ STDAPI DllUnregisterServer(void)
 
 CteBase::CteBase()
 {
+	LockModule();
 	m_cRef = 1;
 	m_pOleClientSite = NULL;
 	m_pdisp = NULL;
+	m_hwndParent = NULL;
 	m_bstrPath = NULL;
 	m_pDocument = NULL;
 	m_webviewController = NULL;
 	m_webviewWindow = NULL;
+	m_bCreating = FALSE;
+	ZeroMemory(&m_webviewBounds, sizeof(m_webviewBounds));
+	ZeroMemory(&m_documentTitleChangedToken, sizeof(m_documentTitleChangedToken));
+	ZeroMemory(&m_navigationStartingToken, sizeof(m_navigationStartingToken));
+	ZeroMemory(&m_navigationCompletedToken, sizeof(m_navigationCompletedToken));
 #ifdef USE_DRAGDROP
 	m_webviewEnvironment3 = NULL;
 	m_webviewCompositionController3 = NULL;
 #endif
 }
 
-CteBase::~CteBase()
+// Breaks the reference cycle between this object and the WebView2 event handlers
+VOID CteBase::Shutdown()
 {
-	HWND hwnd;
-	GetWindow(&hwnd);
-	RevokeDragDrop(hwnd);
-	teSysFreeString(&m_bstrPath);
-	SafeRelease(&m_pOleClientSite);
-	SafeRelease(&m_pdisp);
-	SafeRelease(&m_pDocument);
+	m_bCreating = FALSE;
+	HWND hwnd = NULL;
+	if (SUCCEEDED(GetWindow(&hwnd)) && hwnd) {
+		RevokeDragDrop(hwnd);
+	}
+	if (m_webviewWindow) {
+		if (m_documentTitleChangedToken.value) {
+			m_webviewWindow->remove_DocumentTitleChanged(m_documentTitleChangedToken);
+			m_documentTitleChangedToken.value = 0;
+		}
+		if (m_navigationStartingToken.value) {
+			m_webviewWindow->remove_NavigationStarting(m_navigationStartingToken);
+			m_navigationStartingToken.value = 0;
+		}
+		if (m_navigationCompletedToken.value) {
+			m_webviewWindow->remove_NavigationCompleted(m_navigationCompletedToken);
+			m_navigationCompletedToken.value = 0;
+		}
+	}
+	if (m_webviewController) {
+		m_webviewController->Close();
+	}
 	SafeRelease(&m_webviewController);
 	SafeRelease(&m_webviewWindow);
 #ifdef USE_DRAGDROP
@@ -466,10 +536,20 @@ CteBase::~CteBase()
 #endif
 }
 
+CteBase::~CteBase()
+{
+	Shutdown();
+	teSysFreeString(&m_bstrPath);
+	SafeRelease(&m_pOleClientSite);
+	SafeRelease(&m_pdisp);
+	SafeRelease(&m_pDocument);
+	UnlockModule();
+}
+
 #ifdef USE_DRAGDROP
 VOID CteBase::OffsetPointToWebView(LPPOINT ppt)
 {
-	HWND hwnd;
+	HWND hwnd = NULL;
 	GetWindow(&hwnd);
 	::ScreenToClient(hwnd, ppt);
 }
@@ -499,7 +579,9 @@ STDMETHODIMP CteBase::QueryInterface(REFIID riid, void **ppvObject)
 		QITABENT(CteBase, ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler),
 #endif
 		QITABENT(CteBase, ICoreWebView2DocumentTitleChangedEventHandler),
+		QITABENT(CteBase, ICoreWebView2NavigationStartingEventHandler),
 		QITABENT(CteBase, ICoreWebView2NavigationCompletedEventHandler),
+		QITABENT(CteBase, ICoreWebView2ExecuteScriptCompletedHandler),
 //		QITABENT(CteBase, ICoreWebView2WebResourceResponseReceivedEventHandler),
 	{ 0 }
 	};
@@ -533,14 +615,18 @@ STDMETHODIMP CteBase::GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo)
 
 STDMETHODIMP CteBase::GetIDsOfNames(REFIID riid, LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-	CHAR pszName[9] = { 0 };
+	CHAR pszName[16];
 	for (int i = 0;; ++i) {
 		WCHAR wc = rgszNames[0][i];
-		if (i == _countof(pszName) - 1 || wc < '0' || wc > 'z') {
+		if (wc == 0) {
 			pszName[i] = NULL;
 			break;
 		}
-		pszName[i] = tolower(wc);
+		if (i == _countof(pszName) - 1 || wc < '0' || wc > 'z') {
+			pszName[0] = NULL;//not a known name
+			break;
+		}
+		pszName[i] = (CHAR)tolower(wc);
 	}
 	auto itr = g_umSW.find(pszName);
 	if (itr != g_umSW.end()) {
@@ -562,32 +648,43 @@ STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD w
 
 		case TE_PROPERTY + 1://name
 			if (pVarResult) {
-				get_Name(&pVarResult->bstrVal);
-				pVarResult->vt = VT_BSTR;
+				BSTR bs = NULL;
+				if SUCCEEDED(get_Name(&bs)) {
+					pVarResult->bstrVal = bs;
+					pVarResult->vt = VT_BSTR;
+				}
 			}
 			return S_OK;
 
 		case TE_PROPERTY + 2://fullname
 			if (pVarResult) {
-				get_FullName(&pVarResult->bstrVal);
-				pVarResult->vt = VT_BSTR;
+				BSTR bs = NULL;
+				if SUCCEEDED(get_FullName(&bs)) {
+					pVarResult->bstrVal = bs;
+					pVarResult->vt = VT_BSTR;
+				}
 			}
 			return S_OK;
 
 		case TE_PROPERTY + 3://path
 			if (pVarResult) {
-				get_Path(&pVarResult->bstrVal);
-				pVarResult->vt = VT_BSTR;
+				BSTR bs = NULL;
+				if SUCCEEDED(get_Path(&bs)) {
+					pVarResult->bstrVal = bs;
+					pVarResult->vt = VT_BSTR;
+				}
 			}
 			return S_OK;
-	
+
 		case TE_PROPERTY + 4://visible
 			if (nArg >= 0) {
-				put_Visible(GetIntFromVariant(&pDispParams->rgvarg[nArg]));
+				put_Visible(GetIntFromVariant(&pDispParams->rgvarg[nArg]) ? VARIANT_TRUE : VARIANT_FALSE);
 			}
 			if (pVarResult) {
-				get_Visible(&pVarResult->boolVal);
-				pVarResult->vt = VT_BOOL;
+				VARIANT_BOOL bVisible = VARIANT_FALSE;
+				if SUCCEEDED(get_Visible(&bVisible)) {
+					teSetBool(pVarResult, bVisible);
+				}
 			}
 			return S_OK;
 
@@ -621,12 +718,12 @@ STDMETHODIMP CteBase::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD w
 //IWebBrowser
 STDMETHODIMP CteBase::GoBack(void)
 {
-	return m_webviewWindow->GoBack();
+	return m_webviewWindow ? m_webviewWindow->GoBack() : E_FAIL;
 }
 
 STDMETHODIMP CteBase::GoForward(void)
 {
-	return m_webviewWindow->GoForward();
+	return m_webviewWindow ? m_webviewWindow->GoForward() : E_FAIL;
 }
 
 STDMETHODIMP CteBase::GoHome(void)
@@ -778,8 +875,10 @@ STDMETHODIMP CteBase::Quit(void)
 
 STDMETHODIMP CteBase::ClientToWindow(int *pcx, int *pcy)
 {
-	HWND hwnd;
-	GetWindow(&hwnd);
+	HWND hwnd = NULL;
+	if (FAILED(GetWindow(&hwnd)) || !hwnd) {
+		return E_FAIL;
+	}
 	POINT pt = { *pcx, *pcy };
 	ClientToScreen(hwnd, &pt);
 	*pcx = pt.x;
@@ -816,12 +915,18 @@ STDMETHODIMP CteBase::GetProperty(BSTR Property, VARIANT *pvtValue)
 
 STDMETHODIMP CteBase::get_Name(BSTR *Name)
 {
+	*Name = NULL;
 	if (!g_versionInfo) {
 		return E_NOINTERFACE;
 	}
-	int nLen = lstrlen(g_versionInfo);
-	*Name = ::SysAllocStringLen(L"WebView2/", nLen + 9);
-	StrNCpy(*Name + 9, g_versionInfo, nLen);
+	const UINT nPrefix = 9;//length of L"WebView2/"
+	UINT nLen = lstrlen(g_versionInfo);
+	*Name = ::SysAllocStringLen(NULL, nPrefix + nLen);
+	if (!*Name) {
+		return E_OUTOFMEMORY;
+	}
+	CopyMemory(*Name, L"WebView2/", nPrefix * sizeof(WCHAR));
+	CopyMemory(*Name + nPrefix, g_versionInfo, nLen * sizeof(WCHAR));
 	return S_OK;
 }
 
@@ -987,21 +1092,25 @@ STDMETHODIMP CteBase::get_RegisterAsDropTarget(VARIANT_BOOL *pbRegister)
 
 STDMETHODIMP CteBase::put_RegisterAsDropTarget(VARIANT_BOOL bRegister)
 {
-	HWND hwnd;
-	GetWindow(&hwnd);
+	HWND hwnd = NULL;
+	if (FAILED(GetWindow(&hwnd)) || !hwnd) {
+		return S_OK;
+	}
 	RevokeDragDrop(hwnd);
-	if (bRegister) {
-		IDocHostUIHandler *pDocHostUIHandler;
+	if (bRegister && m_pOleClientSite) {
+		IDocHostUIHandler *pDocHostUIHandler = NULL;
 		if SUCCEEDED(m_pOleClientSite->QueryInterface(IID_PPV_ARGS(&pDocHostUIHandler))) {
-			IDropTarget	*pDropTarget;
-			pDocHostUIHandler->GetDropTarget(this, &pDropTarget);
-			RegisterDragDrop(hwnd, pDropTarget);
-			pDropTarget->Release();
+			IDropTarget *pDropTarget = NULL;
+			if (SUCCEEDED(pDocHostUIHandler->GetDropTarget(this, &pDropTarget)) && pDropTarget) {
+				RegisterDragDrop(hwnd, pDropTarget);
+				pDropTarget->Release();
+			}
 #ifdef USE_DRAGDROP
 			if (m_webviewEnvironment3) {
 				m_webviewEnvironment3->CreateCoreWebView2CompositionController(m_hwndParent, this);
 			}
 #endif
+			pDocHostUIHandler->Release();
 		}
 	}
 	return S_OK;
@@ -1060,6 +1169,7 @@ STDMETHODIMP CteBase::SetHostNames(LPCOLESTR szContainerApp, LPCOLESTR szContain
 
 STDMETHODIMP CteBase::Close(DWORD dwSaveOption)
 {
+	Shutdown();
 	return S_OK;
 }
 
@@ -1087,44 +1197,55 @@ STDMETHODIMP CteBase::DoVerb(LONG iVerb, LPMSG lpmsg, IOleClientSite *pActiveSit
 {
 	if (iVerb == OLEIVERB_INPLACEACTIVATE) {
 		m_hwndParent = hwndParent;
+		if (m_webviewController || m_bCreating) {
+			return S_OK;//already created (or being created)
+		}
 		WCHAR pszDataPath[MAX_PATH];
-		WCHAR pszSetting[MAX_PATHEX + 128], pszProxyServer[MAX_PATHEX], pszProxyOverride[MAX_PATHEX], pszTemp[MAX_PATHEX];
-		lstrcpy(pszSetting, L"--allow-file-access-from-files --disable-gpu --disable-extensions --disable-features=IsolateOrigins,site-per-process --force-device-scale-factor=1");
+		std::wstring strSetting = L"--allow-file-access-from-files --disable-gpu --disable-extensions --disable-features=IsolateOrigins,site-per-process --force-device-scale-factor=1";
 		GetTempPath(MAX_PATH, pszDataPath);
 		PathAppend(pszDataPath, L"tablacus");
 
-		pszProxyServer[0] = NULL;
-		pszProxyOverride[0] = NULL;
+		std::vector<WCHAR> vProxyServer(MAX_PATHEX + 1, 0), vProxyOverride(MAX_PATHEX + 1, 0);
 		HKEY hKey;
-		if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+		if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
 			DWORD dwSize = sizeof(DWORD);
 			DWORD dwProxyEnable = 0;
 			RegQueryValueEx(hKey, L"ProxyEnable", NULL, NULL, (LPBYTE)&dwProxyEnable, &dwSize);
 			if (dwProxyEnable & 1) {
-				dwSize = MAX_PATHEX;
-				RegQueryValueEx(hKey, L"ProxyServer", NULL, NULL, (LPBYTE)&pszProxyServer, &dwSize);
-				dwSize = MAX_PATHEX;
-				RegQueryValueEx(hKey, L"ProxyOverride", NULL, NULL, (LPBYTE)&pszProxyOverride, &dwSize);
+				DWORD dwType = 0;
+				dwSize = MAX_PATHEX * sizeof(WCHAR);
+				if (RegQueryValueEx(hKey, L"ProxyServer", NULL, &dwType, (LPBYTE)vProxyServer.data(), &dwSize) != ERROR_SUCCESS || dwType != REG_SZ) {
+					vProxyServer[0] = NULL;
+				}
+				dwSize = MAX_PATHEX * sizeof(WCHAR);
+				if (RegQueryValueEx(hKey, L"ProxyOverride", NULL, &dwType, (LPBYTE)vProxyOverride.data(), &dwSize) != ERROR_SUCCESS || dwType != REG_SZ) {
+					vProxyOverride[0] = NULL;
+				}
 			}
 			RegCloseKey(hKey);
 		}
 		auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-		if (pszProxyServer[0]) {
-			lstrcat(pszSetting, L" --proxy-server=\"");
-			lstrcat(pszSetting, pszProxyServer);
-			lstrcat(pszSetting, L"\"");
+		if (vProxyServer[0]) {
+			strSetting += L" --proxy-server=\"";
+			strSetting += vProxyServer.data();
+			strSetting += L"\"";
 		}
-		if (pszProxyOverride[0]) {
-			lstrcat(pszSetting, L" --proxy-bypass-list=\"");
-			lstrcat(pszSetting, pszProxyOverride);
-			lstrcat(pszSetting, L"\"");
+		if (vProxyOverride[0]) {
+			strSetting += L" --proxy-bypass-list=\"";
+			strSetting += vProxyOverride.data();
+			strSetting += L"\"";
 		}
-		options->put_AdditionalBrowserArguments(pszSetting);
+		options->put_AdditionalBrowserArguments(strSetting.c_str());
+		m_bCreating = TRUE;
 #ifdef _DEBUG
-		_CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
+		HRESULT hr = _CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
 #else
-		CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
+		HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(NULL, pszDataPath, options.Get(), this);
 #endif
+		if (FAILED(hr)) {
+			m_bCreating = FALSE;
+			OutputDebugStringA("tewv: CreateCoreWebView2EnvironmentWithOptions failed\n");
+		}
 		return S_OK;
 	}
 	return E_NOTIMPL;
@@ -1193,6 +1314,7 @@ STDMETHODIMP CteBase::SetColorScheme(LOGPALETTE *pLogpal)
 //IOleWindow
 STDMETHODIMP CteBase::GetWindow(HWND *phwnd)
 {
+	*phwnd = NULL;
 	if (m_hwndParent) {
 		*phwnd = FindWindowEx(m_hwndParent, NULL, L"Chrome_WidgetWin_0", NULL);
 		if (*phwnd) {
@@ -1231,6 +1353,9 @@ STDMETHODIMP CteBase::SetObjectRects(LPCRECT lprcPosRect, LPCRECT lprcClipRect)
 	if (!lprcPosRect) {
 		GetClientRect(m_hwndParent, &bounds);
 		lprcClipRect = &bounds;
+	}
+	if (!lprcClipRect) {
+		lprcClipRect = lprcPosRect;
 	}
 	m_webviewController->SetBoundsAndZoomFactor(*lprcClipRect, 1.0);
 	CopyRect(&m_webviewBounds, lprcClipRect);
@@ -1372,13 +1497,12 @@ STDMETHODIMP CteBase::SetToolbarItems(LPTBBUTTONSB lpButtons, UINT nButtons, UIN
 //IServiceProvider
 STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 {
+	*ppv = NULL;
 	if (IsEqualGUID(guidService, SID_TablacusObject)) {
-		*ppv = new CteObjectEx();
-		return *ppv ? S_OK : E_OUTOFMEMORY;
+		return teCreateObject<CteObjectEx>(riid, ppv, true);
 	}
 	if (IsEqualGUID(guidService, SID_TablacusArray)) {
-		*ppv = new CteArray();
-		return *ppv ? S_OK : E_OUTOFMEMORY;
+		return teCreateObject<CteArray>(riid, ppv, true);
 	}
 	if (IsEqualIID(riid, IID_IShellBrowser)) {
 		return QueryInterface(riid, ppv);
@@ -1390,9 +1514,18 @@ STDMETHODIMP CteBase::QueryService(REFGUID guidService, REFIID riid, void **ppv)
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Environment *created_environment)
 {
 	if (FAILED(result) || !created_environment) {
+		m_bCreating = FALSE;
+		OutputDebugStringA("tewv: creating the WebView2 environment failed\n");
 		return result;
 	}
-	created_environment->CreateCoreWebView2Controller(m_hwndParent, this);
+	if (!m_bCreating) {
+		return S_OK;//closed while the environment was being created
+	}
+	HRESULT hr = created_environment->CreateCoreWebView2Controller(m_hwndParent, this);
+	if (FAILED(hr)) {
+		m_bCreating = FALSE;
+		OutputDebugStringA("tewv: CreateCoreWebView2Controller failed\n");
+	}
 #ifdef USE_DRAGDROP
 	created_environment->QueryInterface(IID_PPV_ARGS(&m_webviewEnvironment3));
 #endif
@@ -1402,23 +1535,39 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Environment *created_e
 //ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdController)
 {
+	BOOL bWanted = m_bCreating;
+	m_bCreating = FALSE;
 	if (FAILED(result) || !createdController) {
+		OutputDebugStringA("tewv: creating the WebView2 controller failed\n");
 		return result;
 	}
-	createdController->QueryInterface(IID_PPV_ARGS(&m_webviewController));
-	m_webviewController->get_CoreWebView2(&m_webviewWindow);
-	ICoreWebView2Settings* Settings;
-//	m_webviewWindow->OpenDevToolsWindow();
-	m_webviewWindow->get_Settings(&Settings);
-	Settings->put_IsScriptEnabled(TRUE);
-	Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
-	Settings->put_IsWebMessageEnabled(TRUE);
-	Settings->put_IsStatusBarEnabled(FALSE);
-	SafeRelease(&Settings);
+	if (!bWanted || m_webviewController) {
+		createdController->Close();//closed (or duplicated) while being created
+		return S_OK;
+	}
+	if (FAILED(createdController->QueryInterface(IID_PPV_ARGS(&m_webviewController))) || !m_webviewController) {
+		m_webviewController = NULL;
+		return E_FAIL;
+	}
+	if (FAILED(m_webviewController->get_CoreWebView2(&m_webviewWindow)) || !m_webviewWindow) {
+		m_webviewWindow = NULL;
+		SafeRelease(&m_webviewController);
+		return E_FAIL;
+	}
+	ICoreWebView2Settings *Settings = NULL;
+//  m_webviewWindow->OpenDevToolsWindow();
+	if (SUCCEEDED(m_webviewWindow->get_Settings(&Settings)) && Settings) {
+		Settings->put_IsScriptEnabled(TRUE);
+		Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
+		Settings->put_IsWebMessageEnabled(TRUE);
+		Settings->put_IsStatusBarEnabled(FALSE);
+		SafeRelease(&Settings);
+	}
 	if (m_pOleClientSite) {
-		IDocHostUIHandler *pDocHostUIHandler;
+		IDocHostUIHandler *pDocHostUIHandler = NULL;
 		if SUCCEEDED(m_pOleClientSite->QueryInterface(IID_PPV_ARGS(&pDocHostUIHandler))) {
 			VARIANT v;
+			VariantInit(&v);
 			if SUCCEEDED(pDocHostUIHandler->GetExternal(&v.pdispVal)) {
 				v.vt = VT_DISPATCH;
 				m_webviewWindow->AddHostObjectToScript(L"te", &v);
@@ -1429,7 +1578,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 		m_webviewWindow->add_DocumentTitleChanged(this, &m_documentTitleChangedToken);
 		m_webviewWindow->add_NavigationStarting(this, &m_navigationStartingToken);
 		m_webviewWindow->add_NavigationCompleted(this, &m_navigationCompletedToken);
-/*		ICoreWebView2_2 *webview2;
+/*      ICoreWebView2_2 *webview2;
 		if SUCCEEDED(m_webviewWindow->QueryInterface(IID_PPV_ARGS(&webview2))) {
 			webview2->add_WebResourceResponseReceived(this, &m_resourceResponseToken);
 			webview2->Release();
@@ -1446,7 +1595,7 @@ STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2Controller *createdCon
 #ifdef USE_DRAGDROP
 //ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler
 STDMETHODIMP CteBase::Invoke(HRESULT result, ICoreWebView2CompositionController *createdController)
-{	
+{
 	SafeRelease(&m_webviewCompositionController3);
 	return createdController->QueryInterface(IID_PPV_ARGS(&m_webviewCompositionController3));
 }
@@ -1475,7 +1624,7 @@ STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, IUnknown* args) {
 	return S_OK;
 }
 
-//ICoreWebView2DocumentTitleChangedEventHandler
+//ICoreWebView2NavigationStartingEventHandler
 STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) {
 	VARIANTARG *pv = GetNewVARIANT(7);
 	VARIANT_BOOL bCancel = VARIANT_FALSE;
@@ -1503,7 +1652,8 @@ STDMETHODIMP CteBase::Invoke(ICoreWebView2* sender, ICoreWebView2NavigationCompl
 		m_webviewController->NotifyParentWindowPositionChanged();
 	}
 	SetObjectRects(NULL, NULL);
-	return Invoke5(m_pdisp, DISPID_DOCUMENTCOMPLETE, DISPATCH_METHOD, NULL, 0, NULL);
+	Invoke5(m_pdisp, DISPID_DOCUMENTCOMPLETE, DISPATCH_METHOD, NULL, 0, NULL);
+	return S_OK;
 }
 /*
 //ICoreWebView2WebResourceResponseReceivedEventHandler
@@ -1553,16 +1703,17 @@ STDMETHODIMP CteClassFactory::CreateInstance(IUnknown *pUnkOuter, REFIID riid, v
 		return CLASS_E_NOAGGREGATION;
 	}
 #ifdef _DEBUG
-	if (!_CreateCoreWebView2EnvironmentWithOptions) {
+	if (!teLoadDebugLoader()) {
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
 #else
-	if (GetAvailableCoreWebView2BrowserVersionString(NULL, &g_versionInfo) != S_OK) {
+	LPWSTR lpVersion = NULL;
+	if (GetAvailableCoreWebView2BrowserVersionString(NULL, &lpVersion) != S_OK) {
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
+	teSetVersionInfo(lpVersion);
 #endif
-	*ppvObject = new CteBase();
-	return S_OK;
+	return teCreateObject<CteBase>(riid, ppvObject, false);
 }
 
 STDMETHODIMP CteClassFactory::LockServer(BOOL fLock)
@@ -1578,6 +1729,7 @@ STDMETHODIMP CteClassFactory::LockServer(BOOL fLock)
 ///CteArray
 CteArray::CteArray()
 {
+	LockModule();
 	m_cRef = 1;
 	SAFEARRAYBOUND sab = { 0, 0 };
 	m_psa = SafeArrayCreate(VT_VARIANT, 1, &sab);
@@ -1585,7 +1737,10 @@ CteArray::CteArray()
 
 CteArray::~CteArray()
 {
-	SafeArrayDestroy(m_psa);
+	if (m_psa) {
+		SafeArrayDestroy(m_psa);
+	}
+	UnlockModule();
 }
 
 STDMETHODIMP CteArray::QueryInterface(REFIID riid, void **ppvObject)
@@ -1658,9 +1813,11 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 
 		case DISPID_TE_COUNT://Count
 			if (nArg >= 0 && (wFlags & DISPATCH_PROPERTYPUT)) {
-				VARIANT v;
-				VariantInit(&v);
-				sab = { (ULONG)GetIntFromVariant(&pDispParams->rgvarg[nArg]), 0 };
+				LONG nNew = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
+				if (nNew < 0) {
+					nNew = 0;
+				}
+				sab = { (ULONG)nNew, 0 };
 				::SafeArrayRedim(m_psa, &sab);
 			}
 			teSetLong(pVarResult, GetCount());
@@ -1693,36 +1850,34 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 				if (pVarResult) {
 					LONG l = 0;
 					::SafeArrayGetElement(m_psa, &l, pVarResult);
-				} else {
-					VARIANT vTmp;
-					LONG l = 0;
-					::SafeArrayGetElement(m_psa, &l, &vTmp);
-					::VariantClear(&vTmp);
 				}
-				VARIANT *pv;
-				if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
-					::MoveMemory(pv, &pv[1], sizeof(VARIANT) * (n - 1));
-					::VariantInit(&pv[n - 1]);
+				VARIANT *pvShift;
+				if (::SafeArrayAccessData(m_psa, (LPVOID *)&pvShift) == S_OK) {
+					::VariantClear(&pvShift[0]);
+					::MoveMemory(pvShift, &pvShift[1], sizeof(VARIANT) * (n - 1));
+					::VariantInit(&pvShift[n - 1]);
 					::SafeArrayUnaccessData(m_psa);
-					SAFEARRAYBOUND sab = { (ULONG)n - 1, 0 };
+					sab = { (ULONG)n - 1, 0 };
 					::SafeArrayRedim(m_psa, &sab);
 				}
 			}
 			return S_OK;
 
 		case TE_METHOD + 4://unshift
-			n = GetCount();
-			VARIANT *pv;
-			sab = { (ULONG)n + nArg + 1, 0 };
-			::SafeArrayRedim(m_psa, &sab);
-			if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
-				::CopyMemory(&pv[nArg + 1], pv, sizeof(VARIANT) * n);
-				for (int i = nArg; i >= 0; --i) {
-					::VariantInit(&pv[i]);
-				}
-				::SafeArrayUnaccessData(m_psa);
-				for (LONG i = nArg; i >= 0; --i) {
-					::SafeArrayPutElement(m_psa, &i, &pDispParams->rgvarg[nArg - i]);
+			{
+				n = GetCount();
+				VARIANT *pvUnshift;
+				sab = { (ULONG)n + nArg + 1, 0 };
+				::SafeArrayRedim(m_psa, &sab);
+				if (::SafeArrayAccessData(m_psa, (LPVOID *)&pvUnshift) == S_OK) {
+					::MoveMemory(&pvUnshift[nArg + 1], pvUnshift, sizeof(VARIANT) * n);
+					for (int i = nArg; i >= 0; --i) {
+						::VariantInit(&pvUnshift[i]);
+					}
+					::SafeArrayUnaccessData(m_psa);
+					for (LONG i = nArg; i >= 0; --i) {
+						::SafeArrayPutElement(m_psa, &i, &pDispParams->rgvarg[nArg - i]);
+					}
 				}
 			}
 			return S_OK;
@@ -1748,76 +1903,111 @@ STDMETHODIMP CteArray::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WORD 
 					n += ::SysStringByteLen(v.bstrVal);
 					VariantClear(&v);
 				}
-				pVarResult->vt = VT_BSTR;
 				pVarResult->bstrVal = ::SysAllocStringByteLen(NULL, n);
-				BYTE *p = (BYTE *)pVarResult->bstrVal;
-				for (LONG i = 0; i < GetCount(); ++i) {
-					if (i) {
-						CopyMemory(p, vSeparator.bstrVal, nSeparator);
-						p += nSeparator;
+				if (pVarResult->bstrVal) {
+					pVarResult->vt = VT_BSTR;
+					BYTE *p = (BYTE *)pVarResult->bstrVal;
+					for (LONG i = 0; i < GetCount(); ++i) {
+						if (i) {
+							CopyMemory(p, vSeparator.bstrVal, nSeparator);
+							p += nSeparator;
+						}
+						VariantInit(&vs);
+						::SafeArrayGetElement(m_psa, &i, &vs);
+						teVariantChangeType(&v, &vs, VT_BSTR);
+						VariantClear(&vs);
+						UINT nSize = ::SysStringByteLen(v.bstrVal);
+						CopyMemory(p, v.bstrVal, nSize);
+						p += nSize;
+						VariantClear(&v);
 					}
-					VariantInit(&vs);
-					::SafeArrayGetElement(m_psa, &i, &vs);
-					teVariantChangeType(&v, &vs, VT_BSTR);
-					VariantClear(&vs);
-					UINT nSize = ::SysStringByteLen(v.bstrVal);
-					CopyMemory(p, v.bstrVal, nSize);
-					p += nSize;
-					VariantClear(&v);
 				}
+				VariantClear(&vSeparator);
 			}
 			return S_OK;
 
-		case TE_METHOD + 6://Slice
-		case TE_METHOD + 7://Splice
-			if (nArg >= 0) {
-				CteArray *pNewArray = NULL;
+		case TE_METHOD + 6://slice(start, end)
+		case TE_METHOD + 7://splice(start, deleteCount)
+			{
+				const bool bSplice = (dispIdMember == TE_METHOD + 7);
+				LONG nCount = GetCount();
+				LONG nStart = nArg >= 0 ? GetIntFromVariant(&pDispParams->rgvarg[nArg]) : 0;
+				if (nStart < 0) {
+					nStart += nCount;
+					if (nStart < 0) {
+						nStart = 0;
+					}
+				}
+				if (nStart > nCount) {
+					nStart = nCount;
+				}
+				LONG nLen;
+				if (bSplice) {
+					//deleteCount (omitted: delete to the end, no argument at all: delete nothing)
+					nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : (nArg >= 0 ? nCount - nStart : 0);
+					if (nLen < 0) {
+						nLen = 0;
+					}
+					if (nLen > nCount - nStart) {
+						nLen = nCount - nStart;
+					}
+				} else {
+					//end index (omitted: to the end)
+					LONG nEnd = nCount;
+					if (nArg >= 1) {
+						nEnd = GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]);
+						if (nEnd < 0) {
+							nEnd += nCount;
+							if (nEnd < 0) {
+								nEnd = 0;
+							}
+						}
+						if (nEnd > nCount) {
+							nEnd = nCount;
+						}
+					}
+					nLen = nEnd - nStart;
+					if (nLen < 0) {
+						nLen = 0;
+					}
+				}
 				if (pVarResult) {
-					pNewArray = new CteArray();
-				}
-				LONG nStart = GetIntFromVariant(&pDispParams->rgvarg[nArg]);
-				LONG nLen = nArg >= 1 ? GetIntFromVariant(&pDispParams->rgvarg[nArg - 1]) : MAXINT;
-				if (nStart > GetCount() - nLen) {
-					nLen = GetCount() - nStart;
-				}
-				if (nLen < 0) {
-					nLen = 0;
-				}
-				VARIANT v;
-				VariantInit(&v);
-				if (pVarResult) {
-					for (LONG i = nStart; i < nLen; ++i) {
+					CteArray *pNewArray = new CteArray();
+					VARIANT v;
+					for (LONG i = nStart; i < nStart + nLen; ++i) {
+						VariantInit(&v);
 						ItemEx(i, &v, NULL);
 						pNewArray->ItemEx(-1, NULL, &v);
 						VariantClear(&v);
 					}
 					teSetObjectRelease(pVarResult, pNewArray);
 				}
-				if (dispIdMember == TE_METHOD + 7 && nLen) {//Splice
-					int n = GetCount();
-					if (::SafeArrayAccessData(m_psa, (LPVOID *)&pv) == S_OK) {
-						for (int i = nLen; --i >= 0;) {
-							VariantClear(&pv[nStart + i]);
+				if (bSplice && nLen > 0) {
+					VARIANT *pvSplice;
+					if (::SafeArrayAccessData(m_psa, (LPVOID *)&pvSplice) == S_OK) {
+						for (LONG i = 0; i < nLen; ++i) {
+							::VariantClear(&pvSplice[nStart + i]);
 						}
-						::CopyMemory(&pv[nStart], &pv[nStart + nLen], sizeof(VARIANT) * (n - (nStart + nLen)));
-						for (int i = nLen; i > 0; --i) {
-							::VariantInit(&pv[n - i]);
+						::MoveMemory(&pvSplice[nStart], &pvSplice[nStart + nLen], sizeof(VARIANT) * (nCount - (nStart + nLen)));
+						for (LONG i = nLen; i > 0; --i) {
+							::VariantInit(&pvSplice[nCount - i]);
 						}
 						::SafeArrayUnaccessData(m_psa);
+						sab = { (ULONG)(nCount - nLen), 0 };
+						::SafeArrayRedim(m_psa, &sab);
 					}
-					sab = { (ULONG)n - nLen, 0 };
-					::SafeArrayRedim(m_psa, &sab);
 				}
-			} else if (pVarResult) {
-				teSetObjectRelease(pVarResult, new CteArray());
 			}
 			return S_OK;
 
 		case DISPID_PROPERTYPUT:
 			if ((wFlags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) && nArg >= 0) {
 				if (pDispParams->rgvarg[nArg].vt == (VT_ARRAY | VT_VARIANT)) {
-					SafeArrayDestroy(m_psa);
-					SafeArrayCopy(pDispParams->rgvarg[nArg].parray, &m_psa);
+					SAFEARRAY *psa = NULL;
+					if SUCCEEDED(SafeArrayCopy(pDispParams->rgvarg[nArg].parray, &psa)) {
+						SafeArrayDestroy(m_psa);
+						m_psa = psa;
+					}
 				}
 			}
 			return S_OK;
@@ -1861,7 +2051,7 @@ STDMETHODIMP CteArray::InvokeEx(DISPID id, LCID lcid, WORD wFlags, DISPPARAMS *p
 
 STDMETHODIMP CteArray::DeleteMemberByName(BSTR bstrName, DWORD grfdex)
 {
-	DISPID id;
+	DISPID id = DISPID_UNKNOWN;
 	HRESULT hr = teGetDispIdNum(bstrName, GetCount(), &id);
 	if SUCCEEDED(hr) {
 		return DeleteMemberByDispID(id);
@@ -1887,18 +2077,20 @@ STDMETHODIMP CteArray::GetMemberProperties(DISPID id, DWORD grfdexFetch, DWORD *
 
 STDMETHODIMP CteArray::GetMemberName(DISPID id, BSTR *pbstrName)
 {
+	*pbstrName = NULL;
 	if (id >= DISPID_COLLECTION_MIN && id < DISPID_COLLECTION_MIN + GetCount()) {
 		wchar_t pszName[16];
 		swprintf_s(pszName, 16, L"%d", id - DISPID_COLLECTION_MIN);
 		*pbstrName = ::SysAllocString(pszName);
-		return S_OK;
+		return *pbstrName ? S_OK : E_OUTOFMEMORY;
 	}
 	for (auto itr = g_umArray.begin(); itr != g_umArray.end(); ++itr) {
 		if (id == itr->second) {
 			*pbstrName = ::SysAllocString(itr->first.data());
+			return *pbstrName ? S_OK : E_OUTOFMEMORY;
 		}
 	}
-	return E_NOTIMPL;
+	return E_FAIL;
 }
 
 STDMETHODIMP CteArray::GetNextDispID(DWORD grfdex, DISPID id, DISPID *pid)
@@ -1914,6 +2106,9 @@ STDMETHODIMP CteArray::GetNameSpaceParent(IUnknown **ppunk)
 
 LONG CteArray::GetCount()
 {
+	if (!m_psa) {
+		return 0;
+	}
 	LONG lUBound, lLBound;
 	SafeArrayGetUBound(m_psa, 1, &lUBound);
 	SafeArrayGetLBound(m_psa, 1, &lLBound);
@@ -1941,6 +2136,7 @@ VOID CteArray::ItemEx(LONG nIndex, VARIANT *pVarResult, VARIANT *pVarNew)
 
 CteObjectEx::CteObjectEx()
 {
+	LockModule();
 	m_cRef = 1;
 	m_dispId = DISPID_COLLECTION_MIN;
 }
@@ -1952,6 +2148,7 @@ CteObjectEx::~CteObjectEx()
 	}
 	m_umIndex.clear();
 	m_mData.clear();
+	UnlockModule();
 }
 
 STDMETHODIMP CteObjectEx::QueryInterface(REFIID riid, void **ppvObject)
@@ -2012,11 +2209,13 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 		VariantInit(pVarResult);
 	}
 	if (dispIdMember == DISPID_VALUE) {
-		if (pDispParams->cArgs == 1 && pDispParams->rgvarg[0].vt == VT_BSTR) {
-			auto itr2 = m_umIndex.find(pDispParams->rgvarg[0].bstrVal);
+		if (pDispParams && pDispParams->cArgs == 1 && pDispParams->rgvarg[0].vt == VT_BSTR) {
+			BSTR bs = pDispParams->rgvarg[0].bstrVal;
+			std::wstring strName(bs ? bs : L"", ::SysStringLen(bs));
+			auto itr2 = m_umIndex.find(strName);
 			if (itr2 != m_umIndex.end()) {
 				auto itr = m_mData.find(itr2->second);
-				if (itr != m_mData.end()) {
+				if (itr != m_mData.end() && pVarResult) {
 					VariantCopy(pVarResult, &itr->second);
 				}
 			}
@@ -2030,12 +2229,19 @@ STDMETHODIMP CteObjectEx::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 			auto itr = m_mData.find(dispIdMember);
 			if (itr != m_mData.end()) {
 				if (itr->second.vt == VT_DISPATCH) {
-					Invoke6(itr->second.pdispVal, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg, pExcepInfo);
+					IDispatch *pdisp = itr->second.pdispVal;
+					if (pdisp && pDispParams) {
+						pdisp->AddRef();//the script may overwrite this property during the call
+						Invoke6(pdisp, DISPID_VALUE, wFlags, pVarResult, -(int)pDispParams->cArgs, pDispParams->rgvarg, pExcepInfo);
+						pdisp->Release();
+					}
+				} else if (pVarResult && (wFlags & DISPATCH_PROPERTYGET)) {
+					VariantCopy(pVarResult, &itr->second);
 				}
 			}
 		} else if (wFlags & DISPATCH_PROPERTYGET) {
 			auto itr = m_mData.find(dispIdMember);
-			if (itr != m_mData.end()) {
+			if (itr != m_mData.end() && pVarResult) {
 				VariantCopy(pVarResult, &itr->second);
 			}
 		} else if (wFlags & (DISPATCH_PROPERTYPUT | DISPATCH_PROPERTYPUTREF)) {
@@ -2138,7 +2344,9 @@ STDMETHODIMP CteObjectEx::GetNameSpaceParent(IUnknown **ppunk)
 
 CteDispatch::CteDispatch(IDispatch *pDispatch, int nMode, DISPID dispId)
 {
+	LockModule();
 	m_cRef = 1;
+	m_pDispatch = NULL;
 	pDispatch->QueryInterface(IID_PPV_ARGS(&m_pDispatch));
 	m_dispIdMember = dispId;
 }
@@ -2146,6 +2354,7 @@ CteDispatch::CteDispatch(IDispatch *pDispatch, int nMode, DISPID dispId)
 CteDispatch::~CteDispatch()
 {
 	Clear();
+	UnlockModule();
 }
 
 VOID CteDispatch::Clear()
@@ -2201,6 +2410,9 @@ STDMETHODIMP CteDispatch::Invoke(DISPID dispIdMember, REFIID riid, LCID lcid, WO
 			VariantInit(pVarResult);
 		}
 		if (wFlags & DISPATCH_METHOD) {
+			if (!m_pDispatch) {
+				return E_FAIL;
+			}
 			return m_pDispatch->Invoke(m_dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 		}
 		teSetObject(pVarResult, this);

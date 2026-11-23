@@ -7,6 +7,8 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
+#include <string>
+#include <new>
 #include <mshtmdid.h>
 #include <exdispid.h>
 #include <Mshtml.h>
@@ -222,6 +224,8 @@ public:
 	CteBase();
 	~CteBase();
 
+	VOID Shutdown();
+
 #ifdef USE_DRAGDROP
 	VOID OffsetPointToWebView(LPPOINT point);
 #endif
@@ -240,6 +244,7 @@ private:
 	EventRegistrationToken m_navigationCompletedToken;
 //	EventRegistrationToken m_resourceResponseToken;
 	BSTR m_bstrPath;
+	BOOL m_bCreating;
 //	HANDLE m_hOleDropTargetInterface;
 
 	IDispatch	*m_pDocument;

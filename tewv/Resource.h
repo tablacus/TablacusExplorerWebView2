@@ -4,6 +4,6 @@
 #define STRING(str) STRING2(str)
 #define STRING2(str) #str
 #define VER_Y		26
-#define VER_M		6
-#define VER_D		19
+#define VER_M		11
+#define VER_D		23
 #define VER_Z		0
